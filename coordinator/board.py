@@ -4,6 +4,7 @@ import getpass
 import hmac
 import json
 import re
+import traceback
 import webbrowser
 from datetime import datetime, timedelta, timezone
 from html import escape
@@ -12,7 +13,7 @@ from pathlib import Path
 from string import Template
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import config, core, db, launcher, messages
+from . import config, core, db, launcher, messages, paths
 
 WEB_DIR = Path(__file__).parent / "web"
 TEMPLATE_DIR = WEB_DIR / "templates"
@@ -267,7 +268,10 @@ def do_create(conn, f):
 def do_start(conn, f):
     tid = _f(f, "id")
     root = _ensure_startable(conn, tid)
-    launcher.start_chat(root, tid)
+    try:
+        launcher.start_chat(root, tid)
+    except OSError as e:
+        raise messages.cannot_start(tid, f"The chat could not be opened in {root}: {e}") from None
     return tid
 
 
@@ -345,8 +349,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, page(data))
         except messages.CoordinatorError as e:
             self._send(404, page_error(e))
+        except Exception:
+            self._internal_error()
         finally:
             conn.close()
+
+    def _internal_error(self):
+        try:
+            with open(paths.app_home() / "board-errors.log", "a", encoding="utf-8") as f:
+                f.write(f"{self.command} {self.path}" + chr(10) + traceback.format_exc() + chr(10))
+        except Exception:
+            pass
+        err = messages.CoordinatorError(
+            "The board could not show this page.",
+            "An unexpected error happened inside the board.",
+            "Go back and try again; details are in board-errors.log in the coordinator folder.")
+        self._send(500, page_error(err))
 
     def do_POST(self):
         if self.headers.get("Host") not in self._allowed():
@@ -354,7 +372,12 @@ class Handler(BaseHTTPRequestHandler):
         action = ACTIONS.get(urlsplit(self.path).path)
         if action is None:
             return self._plain(404, "Not found")
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0:
+            return self._plain(400, "Bad Content-Length")
         if length > MAX_BODY:
             return self._plain(413, "Too large")
         form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"),
@@ -371,6 +394,8 @@ class Handler(BaseHTTPRequestHandler):
                 back = f"/t/{_f(form, 'id')}" if _f(form, "id") else "/"
                 return self._send(400, page_error(e, back))
             self._send(303, "", location=f"/t/{tid}")
+        except Exception:
+            self._internal_error()
         finally:
             conn.close()
 

@@ -315,6 +315,38 @@ class BoardTest(unittest.TestCase):
         self.assertNotIn("https://", body)
 
 
+    def test_start_with_missing_root_is_400_and_server_survives(self):
+        tid = self.task("PA")
+        shutil.rmtree(self.roots["PA"])
+        status, body, _ = self.post("/a/start", {"id": tid})
+        self.assertEqual(status, 400)
+        for w in ("WHAT:", "WHY:", "FIX:"):
+            self.assertIn(w, body)
+        self.assertEqual(self.get("/")[0], 200)
+
+    def test_bad_content_length_is_400(self):
+        for value in ("abc", "-5"):
+            status, _, _ = self.request(
+                "POST", "/a/state", headers={"Origin": self.origin(),
+                                             "Content-Length": value})
+            self.assertEqual(status, 400, value)
+        self.assertEqual(self.get("/")[0], 200)
+
+    def test_unexpected_exception_is_500_page_and_server_keeps_serving(self):
+        tid = self.task()
+        boom = mock.Mock(side_effect=RuntimeError("boom <x>"))
+        with mock.patch.dict(board.API, {"index": (boom, board.page_index)}):
+            status, body, _ = self.get("/")
+        self.assertEqual(status, 500)
+        self.assertNotIn("Traceback", body)
+        self.assertIn("WHAT:", body)
+        with mock.patch("coordinator.core.set_state", side_effect=RuntimeError("x")):
+            status, body, _ = self.post("/a/state", {"id": tid, "state": "done"})
+        self.assertEqual(status, 500)
+        self.assertEqual(self.get("/")[0], 200)
+        self.assertTrue((Path(os.environ["COORDINATOR_HOME"]) / "board-errors.log").exists())
+
+
 class LauncherTest(unittest.TestCase):
     def test_start_chat_opens_new_console_with_task_env(self):
         with mock.patch("subprocess.Popen") as popen:
