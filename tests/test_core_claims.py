@@ -367,5 +367,100 @@ class CoreClaimsTest(unittest.TestCase):
         self.assertIsNone(core.stop_without_report(self.conn, "s1", "again"))
 
 
+    # ------------------------------------- person finishes or drops (R31)
+
+    def test_person_drop_ends_live_claim(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", now=T0)
+        r = core.set_state(self.conn, t["id"], "dropped", PERSON, note="not needed")
+        self.assertEqual(r["state"], "dropped")
+        full = core.get_task(self.conn, t["id"])
+        self.assertIsNotNone(full["claims"][0]["ended"])
+        self.assertEqual(full["claims"][0]["end_reason"], "closed_by_person")
+        ev = self.events(t["id"], "release")[-1]
+        self.assertEqual((ev["actor_type"], ev["from_value"], ev["to_value"]),
+                         ("person", "s1", "closed_by_person"))
+        self.assertIsNone(core.claim_for_session(self.conn, "s1"))
+
+    def test_person_done_ends_live_claim(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1")
+        core.set_state(self.conn, t["id"], "done", PERSON)
+        full = core.get_task(self.conn, t["id"])
+        self.assertEqual(full["claims"][0]["end_reason"], "closed_by_person")
+
+    def test_person_handover_state_keeps_claim(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1")
+        core.set_state(self.conn, t["id"], "review", PERSON, note="look")
+        self.assertIsNotNone(core.claim_for_session(self.conn, "s1"))
+
+    def test_expire_after_person_drop_keeps_dropped(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", now=T0)
+        core.set_state(self.conn, t["id"], "dropped", PERSON, note="not needed")
+        self.assertEqual(
+            core.expire_leases(self.conn, now=T0 + timedelta(hours=9)), [])
+        self.assertEqual(core.get_task(self.conn, t["id"])["state"], "dropped")
+
+    def test_expire_on_non_active_task_ends_claim_without_move(self):
+        # a live claim on a dropped task (left by an older version): the claim
+        # ends and the comment is written, but the state stays.
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", now=T0)
+        self.conn.execute("UPDATE task SET state = 'dropped'")
+        ids = core.expire_leases(self.conn, now=T0 + timedelta(hours=5))
+        self.assertEqual(ids, [t["id"]])
+        full = core.get_task(self.conn, t["id"])
+        self.assertEqual(full["state"], "dropped")
+        self.assertEqual(full["claims"][0]["end_reason"], "expired")
+        self.assertTrue(full["comments"][-1]["text"].startswith(
+            "chat stopped without hand-off"))
+        self.assertEqual([e for e in self.events(t["id"], "state")
+                          if e["actor_type"] == "system"], [])
+
+    def test_force_release_and_no_report_on_handover_task_keep_state(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1")
+        core.set_state(self.conn, t["id"], "review", PERSON, note="look")
+        core.force_release(self.conn, t["id"], PERSON)
+        self.assertEqual(core.get_task(self.conn, t["id"])["state"], "review")
+        t2 = self.task()
+        core.claim(self.conn, t2["id"], "s2")
+        core.set_state(self.conn, t2["id"], "review", PERSON, note="look")
+        core.stop_without_report(self.conn, "s2", "stopped")
+        full = core.get_task(self.conn, t2["id"])
+        self.assertEqual(full["state"], "review")
+        self.assertEqual(full["claims"][0]["end_reason"], "no_report")
+        self.assertEqual(full["comments"][-1]["text"], "stopped")
+
+    def test_release_done_after_person_drop_keeps_dropped_and_records_note(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1")
+        core.set_state(self.conn, t["id"], "dropped", PERSON, note="not needed")
+        r = core.release(self.conn, t["id"], "s1", "done", "my hand-off")
+        self.assertEqual(r["state"], "dropped")
+        full = core.get_task(self.conn, t["id"])
+        self.assertEqual((full["comments"][-1]["kind"], full["comments"][-1]["text"],
+                          full["comments"][-1]["actor_id"]),
+                         ("handoff", "my hand-off", "s1"))
+        self.assertEqual(len(full["claims"]), 1)
+        self.assertEqual(full["claims"][0]["end_reason"], "closed_by_person")
+        self.assertEqual([e["to_value"] for e in self.events(t["id"], "state")][-1],
+                         "dropped")
+        # another session still cannot release it
+        self.assertRefused(core.release, self.conn, t["id"], "s2", "done", "x")
+
+    def test_release_with_live_claim_on_non_active_task_does_not_move(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1")
+        self.conn.execute("UPDATE task SET state = 'dropped'")  # older version
+        r = core.release(self.conn, t["id"], "s1", "clarify", "question?")
+        self.assertEqual(r["state"], "dropped")
+        full = core.get_task(self.conn, t["id"])
+        self.assertEqual(full["claims"][0]["end_reason"], "clarify")
+        self.assertEqual(full["comments"][-1]["text"], "question?")
+
+
 if __name__ == "__main__":
     unittest.main()

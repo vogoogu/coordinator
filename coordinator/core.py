@@ -295,11 +295,17 @@ def set_state(conn, display_id, new_state, actor: Actor,
             if not str(value or "").strip():
                 _refuse(conn, pk, actor, messages.requires_missing(target.name, req),
                         attempted)
+        now = _now()
         if target.name != task["state"]:
-            now = _now()
             _bump(conn, pk, now, state=target.name)
             _event(conn, pk, actor, "state", task["state"], target.name,
                    note.strip() or None, at=now)
+        if actor.type == "person" and target.kind in ("finished", "closed"):
+            # R31: a task the person finished or closed keeps no live claim
+            for c in _live_claim_rows(conn, task_pk=pk):
+                _end_claim(conn, c["id"], now, CLOSED_BY_PERSON)
+                _event(conn, pk, actor, "release", c["session_id"],
+                       CLOSED_BY_PERSON, at=now)
     return _task_by_pk(conn, pk)
 
 
@@ -422,6 +428,7 @@ OUTCOMES = ("done", "clarify", "progress")
 _OUTCOME_COMMENT = {"done": "handoff", "clarify": "question", "progress": "progress"}
 COORDINATOR_TOOL_PREFIX = "mcp__coordinator__"
 SYSTEM_LEASE = Actor("system", "lease")
+CLOSED_BY_PERSON = "closed_by_person"
 
 
 def _stamp(now: datetime | None = None) -> str:
@@ -453,6 +460,10 @@ def _live_claim_rows(conn, task_pk=None, session_id=None) -> list:
         sql += " AND c.session_id = ?"
         args.append(session_id)
     return conn.execute(sql + " ORDER BY c.id", args).fetchall()
+
+
+def _is_active(cfg, state_name) -> bool:
+    return any(s.name == state_name and s.kind == "active" for s in cfg.states)
 
 
 def _move(conn, task, state_name, actor, now, note=None):
@@ -516,7 +527,9 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
 
 
 def release(conn, display_id, session_id, outcome, note) -> dict:
-    """Report on a claimed task: done / clarify end the claim, progress keeps it."""
+    """Report on a claimed task: done / clarify end the claim, progress keeps it.
+    The state moves only from an active state. If a person finished or closed the
+    task meanwhile (claim ended "closed_by_person"), the note is still kept."""
     actor = Actor("chat", session_id)
     with _write(conn):
         task, cfg = _load(conn, display_id)
@@ -524,7 +537,8 @@ def release(conn, display_id, session_id, outcome, note) -> dict:
         attempted = f"release ({outcome})"
         mine = [c for c in _live_claim_rows(conn, task_pk=pk)
                 if c["session_id"] == session_id]
-        if not mine:
+        closed = not mine and _closed_by_person(conn, pk, session_id)
+        if not mine and not closed:
             _refuse(conn, pk, actor, messages.not_your_claim(task["id"]), attempted)
         if outcome not in OUTCOMES:
             _refuse(conn, pk, actor, messages.unknown_outcome(outcome, OUTCOMES),
@@ -533,16 +547,28 @@ def release(conn, display_id, session_id, outcome, note) -> dict:
             _refuse(conn, pk, actor, messages.empty_value("the note"), attempted)
         stamp = _now()
         _add_comment(conn, pk, actor, _OUTCOME_COMMENT[outcome], note, stamp)
-        if outcome == "progress":
+        if closed:
+            pass  # R31: the person already ended the claim; keep the note only
+        elif outcome == "progress":
             conn.execute("UPDATE claim SET last_seen = ? WHERE id = ?",
                          (stamp, mine[0]["id"]))
         else:
             _end_claim(conn, mine[0]["id"], stamp, outcome)
             _event(conn, pk, actor, "release", session_id, outcome, at=stamp)
-            _move(conn, task, cfg.on_done if outcome == "done" else cfg.on_clarify,
-                  actor, stamp)
+            if _is_active(cfg, task["state"]):  # R31: never undo a person's move
+                _move(conn, task, cfg.on_done if outcome == "done" else cfg.on_clarify,
+                      actor, stamp)
         _set_session(conn, session_id, last_task_update=stamp)
     return _task_by_pk(conn, pk)
+
+
+def _closed_by_person(conn, task_pk, session_id) -> bool:
+    """True if this session's latest claim on the task was ended by a person
+    finishing or closing the task (its report is still kept as a comment)."""
+    row = conn.execute(
+        "SELECT end_reason FROM claim WHERE task_id = ? AND session_id = ?"
+        " ORDER BY id DESC LIMIT 1", (task_pk, session_id)).fetchone()
+    return bool(row) and row["end_reason"] == CLOSED_BY_PERSON
 
 
 def touch(conn, session_id, tool="", path="", now: datetime | None = None) -> None:
@@ -560,13 +586,15 @@ def touch(conn, session_id, tool="", path="", now: datetime | None = None) -> No
 
 
 def _release_claims(conn, task, cfg, claims, actor, reason, text, stamp):
-    """Shared tail of force/expire/no-report: end claims, comment, move to clarify."""
+    """Shared tail of force/expire/no-report: end claims, comment, and move to
+    clarify, but only from an active state (R31: a person's move stays)."""
     for c in claims:
         _end_claim(conn, c["id"], stamp, reason)
     _event(conn, task["pk"], actor, "release", claims[0]["session_id"], reason,
            at=stamp)
     _add_comment(conn, task["pk"], actor, "comment", text, stamp)
-    _move(conn, task, cfg.on_clarify, actor, stamp)
+    if _is_active(cfg, task["state"]):
+        _move(conn, task, cfg.on_clarify, actor, stamp)
 
 
 def force_release(conn, display_id, actor: Actor) -> dict:
