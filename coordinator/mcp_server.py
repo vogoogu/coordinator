@@ -160,7 +160,14 @@ def _update(conn, args):
         raise _bad("The field 'blocked' has the wrong type.",
                    "It must be text, or null to clear.",
                    "Pass a string or null.")
-    text = {k: fields[k] for k in ("goal", "done_when", "scope") if k in fields}
+    points = fields.get("open_points")
+    if "open_points" in fields and (not isinstance(points, list)
+                                    or not all(isinstance(p, str) for p in points)):
+        raise _bad("The field 'open_points' has the wrong type.",
+                   "It must be a list of text entries; nothing was changed.",
+                   "Pass open_points as a list of strings, for example [\"a\", \"b\"].")
+    # all fields are checked above, so a type error never leaves a partial update
+    text ={k: fields[k] for k in ("goal", "done_when", "scope") if k in fields}
     result = None
     if text:
         result = core.set_fields(conn, tid, actor, **text)

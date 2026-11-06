@@ -173,6 +173,21 @@ class McpTest(unittest.TestCase):
         err, text = self.call("task_show", id="KMU-999")
         self.assertTrue(err)
 
+    def test_update_bad_open_points_changes_nothing(self):
+        _, t = self.call("task_create", session_id="s1", project="KMU", title="x",
+                         goal="old")
+        self.call("task_claim", session_id="s1", id=t["id"])
+        for bad in ("a string", [1, 2], ["ok", None], {"a": 1}):
+            err, text = self.call("task_update", session_id="s1", id=t["id"],
+                                  fields={"goal": "new", "open_points": bad,
+                                          "blocked": "b"})
+            self.assertTrue(err, bad)
+            self.assertTrue(text.startswith("WHAT:"), text)
+            self.assertIn("open_points", text)
+            shown = self.call("task_show", id=t["id"])[1]
+            self.assertEqual((shown["goal"], shown["open_points"], shown["blocked"]),
+                             ("old", [], None))
+
     def test_bad_json_line_does_not_kill_server(self):
         self.send_raw(b"{")
         r = self.recv()
