@@ -3,18 +3,18 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from . import config, messages, paths
-from .messages import CoordinatorError
+from .messages import ClaimError, CoordinatorError  # noqa: F401
 
 CHAT_CREATE_LIMIT = 3
 
 
 @dataclass(frozen=True)
 class Actor:
-    type: Literal["person", "chat"]
+    type: Literal["person", "chat", "system"]
     id: str
 
 
@@ -409,3 +409,231 @@ def pin(conn, display_id, actor: Actor) -> dict:
         _bump(conn, pk, now, inbox=0)
         _event(conn, pk, actor, "pin", "1" if task["inbox"] else "0", "0", at=now)
     return _task_by_pk(conn, pk)
+
+
+# ---------------------------------------------------------------- claims
+# Functions taking `now` accept a timezone-aware datetime (default: the current time).
+
+LEASE_HOURS = 4
+OUTCOMES = ("done", "clarify", "progress")
+_OUTCOME_COMMENT = {"done": "handoff", "clarify": "question", "progress": "progress"}
+COORDINATOR_TOOL_PREFIX = "mcp__coordinator__"
+SYSTEM_LEASE = Actor("system", "lease")
+
+
+def _stamp(now: datetime | None = None) -> str:
+    """ISO string in the same format as _now(), for a datetime or the current time."""
+    if now is None:
+        return _now()
+    return now.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _set_session(conn, session_id, **cols):
+    names = ", ".join(cols)
+    marks = ", ".join("?" * len(cols))
+    sets = ", ".join(f"{c} = excluded.{c}" for c in cols)
+    conn.execute(
+        f"INSERT INTO session_stat (session_id, {names}) VALUES (?, {marks})"
+        f" ON CONFLICT(session_id) DO UPDATE SET {sets}",
+        (session_id, *cols.values()))
+
+
+def _live_claim_rows(conn, task_pk=None, session_id=None) -> list:
+    sql = ("SELECT c.*, p.key || '-' || t.number AS display_id FROM claim c"
+           " JOIN task t ON t.id = c.task_id JOIN project p ON p.id = t.project_id"
+           " WHERE c.ended IS NULL")
+    args = []
+    if task_pk is not None:
+        sql += " AND c.task_id = ?"
+        args.append(task_pk)
+    if session_id is not None:
+        sql += " AND c.session_id = ?"
+        args.append(session_id)
+    return conn.execute(sql + " ORDER BY c.id", args).fetchall()
+
+
+def _move(conn, task, state_name, actor, now, note=None):
+    """Move to a configured state without the rights/requires checks of set_state."""
+    if state_name != task["state"]:
+        _bump(conn, task["pk"], now, state=state_name)
+        _event(conn, task["pk"], actor, "state", task["state"], state_name, note,
+               at=now)
+
+
+def _add_comment(conn, task_pk, actor, kind, text, now):
+    conn.execute(
+        "INSERT INTO comment (task_id, at, actor_type, actor_id, kind, text)"
+        " VALUES (?,?,?,?,?,?)", (task_pk, now, actor.type, actor.id, kind, text))
+    _bump(conn, task_pk, now)
+    _event(conn, task_pk, actor, "comment", None, kind, text, at=now)
+
+
+def _end_claim(conn, claim_id, now, reason):
+    conn.execute("UPDATE claim SET ended = ?, end_reason = ? WHERE id = ?",
+                 (now, reason, claim_id))
+
+
+def claim(conn, display_id, session_id, transcript_path="", cwd="",
+          now: datetime | None = None) -> dict:
+    """Claim a task for a chat session and move it to the first active state."""
+    actor = Actor("chat", session_id)
+    with _write(conn):
+        task, cfg = _load(conn, display_id)
+        pk = task["pk"]
+        attempted = f"claim {task['id']}"
+        holders = _live_claim_rows(conn, task_pk=pk)
+        if any(h["session_id"] == session_id for h in holders):
+            return _task_by_pk(conn, pk)  # already mine: nothing to do
+        if holders:
+            _refuse(conn, pk, actor,
+                    messages.already_claimed(task["id"], holders[0]["session_id"]),
+                    attempted)
+        kinds = {s.name: s.kind for s in cfg.states}
+        if kinds.get(task["state"]) in ("finished", "closed"):
+            _refuse(conn, pk, actor, messages.claim_final(task["id"], task["state"]),
+                    attempted)
+        other = _live_claim_rows(conn, session_id=session_id)
+        if other:
+            _refuse(conn, pk, actor,
+                    messages.session_has_claim(task["id"], other[0]["display_id"]),
+                    attempted)
+        first = next((s for s in cfg.states if s.kind == "active"), None)
+        if first is None:
+            raise messages.project_config_bad(task["project"], "no active state defined")
+        stamp = _stamp(now)
+        conn.execute(
+            "INSERT INTO claim (task_id, session_id, transcript_path, cwd, started,"
+            " last_seen) VALUES (?,?,?,?,?,?)",
+            (pk, session_id, transcript_path, cwd, stamp, stamp))
+        _bump(conn, pk, stamp, inbox=0)
+        _event(conn, pk, actor, "claim", None, session_id, at=stamp)
+        _move(conn, task, first.name, actor, stamp)
+        _set_session(conn, session_id, last_task_update=stamp)
+    return _task_by_pk(conn, pk)
+
+
+def release(conn, display_id, session_id, outcome, note) -> dict:
+    """Report on a claimed task: done / clarify end the claim, progress keeps it."""
+    actor = Actor("chat", session_id)
+    with _write(conn):
+        task, cfg = _load(conn, display_id)
+        pk = task["pk"]
+        attempted = f"release ({outcome})"
+        mine = [c for c in _live_claim_rows(conn, task_pk=pk)
+                if c["session_id"] == session_id]
+        if not mine:
+            _refuse(conn, pk, actor, messages.not_your_claim(task["id"]), attempted)
+        if outcome not in OUTCOMES:
+            _refuse(conn, pk, actor, messages.unknown_outcome(outcome, OUTCOMES),
+                    attempted)
+        if not str(note or "").strip():
+            _refuse(conn, pk, actor, messages.empty_value("the note"), attempted)
+        stamp = _now()
+        _add_comment(conn, pk, actor, _OUTCOME_COMMENT[outcome], note, stamp)
+        if outcome == "progress":
+            conn.execute("UPDATE claim SET last_seen = ? WHERE id = ?",
+                         (stamp, mine[0]["id"]))
+        else:
+            _end_claim(conn, mine[0]["id"], stamp, outcome)
+            _event(conn, pk, actor, "release", session_id, outcome, at=stamp)
+            _move(conn, task, cfg.on_done if outcome == "done" else cfg.on_clarify,
+                  actor, stamp)
+        _set_session(conn, session_id, last_task_update=stamp)
+    return _task_by_pk(conn, pk)
+
+
+def touch(conn, session_id, tool="", path="", now: datetime | None = None) -> None:
+    """Record work by a session that holds a live claim; otherwise write nothing."""
+    if str(tool).startswith(COORDINATOR_TOOL_PREFIX):
+        return
+    if not _live_claim_rows(conn, session_id=session_id):
+        return
+    stamp = _stamp(now)
+    with transaction(conn):
+        conn.execute("UPDATE claim SET last_seen = ? WHERE session_id = ?"
+                     " AND ended IS NULL", (stamp, session_id))
+        _set_session(conn, session_id, last_activity=stamp, last_tool=tool,
+                     last_path=path)
+
+
+def _release_claims(conn, task, cfg, claims, actor, reason, text, stamp):
+    """Shared tail of force/expire/no-report: end claims, comment, move to clarify."""
+    for c in claims:
+        _end_claim(conn, c["id"], stamp, reason)
+    _event(conn, task["pk"], actor, "release", claims[0]["session_id"], reason,
+           at=stamp)
+    _add_comment(conn, task["pk"], actor, "comment", text, stamp)
+    _move(conn, task, cfg.on_clarify, actor, stamp)
+
+
+def force_release(conn, display_id, actor: Actor) -> dict:
+    """Person only: end whatever live claim the task has."""
+    with _write(conn):
+        task, cfg = _load(conn, display_id)
+        pk = task["pk"]
+        if actor.type != "person":
+            _refuse(conn, pk, actor, messages.person_only("Force release"),
+                    "force release")
+        claims = _live_claim_rows(conn, task_pk=pk)
+        if not claims:
+            _refuse(conn, pk, actor, messages.no_live_claim(task["id"]),
+                    "force release")
+        _release_claims(conn, task, cfg, claims, actor, "force",
+                        "released by person", _now())
+    return _task_by_pk(conn, pk)
+
+
+def expire_leases(conn, now: datetime | None = None, hours: float = LEASE_HOURS) -> list:
+    """End claims not seen for `hours`; the task goes to the clarify state."""
+    stamp = _stamp(now)
+    cutoff = datetime.fromisoformat(stamp) - timedelta(hours=hours)
+    expired = []
+    with _write(conn):
+        for c in _live_claim_rows(conn):
+            if datetime.fromisoformat(c["last_seen"]) >= cutoff:
+                continue
+            task, cfg = _load(conn, c["display_id"])
+            s = conn.execute("SELECT * FROM session_stat WHERE session_id = ?",
+                             (c["session_id"],)).fetchone()
+            last = "none"
+            if s and s["last_activity"]:
+                what = " ".join(x for x in (s["last_tool"], s["last_path"]) if x)
+                last = f"{what or 'none'} at {s['last_activity']}"
+            _release_claims(
+                conn, task, cfg, [c], SYSTEM_LEASE, "expired",
+                "chat stopped without hand-off; last activity: " + last, stamp)
+            expired.append(task["id"])
+    return expired
+
+
+def stop_without_report(conn, session_id, note) -> dict | None:
+    """Stop hook: the chat ended its turn with no report. None if it holds no claim."""
+    if not _live_claim_rows(conn, session_id=session_id):
+        return None
+    actor = Actor("chat", session_id)
+    with _write(conn):
+        claims = _live_claim_rows(conn, session_id=session_id)
+        if not claims:
+            return None
+        task, cfg = _load(conn, claims[0]["display_id"])
+        stamp = _now()
+        _release_claims(conn, task, cfg, claims, actor, "no_report", note, stamp)
+        _set_session(conn, session_id, last_task_update=stamp)
+    return _task_by_pk(conn, task["pk"])
+
+
+def claim_for_session(conn, session_id) -> dict | None:
+    """The session's live claim (with `display_id` of its task), or None."""
+    rows = _live_claim_rows(conn, session_id=session_id)
+    return dict(rows[0]) if rows else None
+
+
+def needs_report(conn, session_id) -> bool:
+    """True if the session holds a live claim and worked since its last task update."""
+    if not _live_claim_rows(conn, session_id=session_id):
+        return False
+    s = conn.execute("SELECT last_activity, last_task_update FROM session_stat"
+                     " WHERE session_id = ?", (session_id,)).fetchone()
+    if not s or s["last_activity"] is None:
+        return False
+    return s["last_task_update"] is None or s["last_activity"] > s["last_task_update"]

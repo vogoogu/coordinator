@@ -73,7 +73,9 @@ CREATE TABLE IF NOT EXISTS session_stat (
     session_id TEXT PRIMARY KEY,
     tasks_created INTEGER NOT NULL DEFAULT 0,
     last_task_update TEXT,
-    last_activity TEXT
+    last_activity TEXT,
+    last_tool TEXT,
+    last_path TEXT
 );
 CREATE TABLE IF NOT EXISTS setting (
     key TEXT PRIMARY KEY,

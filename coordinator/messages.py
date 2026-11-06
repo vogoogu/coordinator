@@ -152,3 +152,49 @@ def person_only(what):
         f"{what} was not done.",
         "Only a person may do this.",
         "Ask the person to do it on the board or command line.")
+
+
+class ClaimError(CoordinatorError):
+    """A claim was refused."""
+
+
+def already_claimed(display_id, holder):
+    return ClaimError(
+        f"{display_id} was not claimed.",
+        f"It is already claimed by {holder}.",
+        "Pick another task, or wait until that session releases it.")
+
+
+def claim_final(display_id, state):
+    return ClaimError(
+        f"{display_id} was not claimed.",
+        f"The task is in state {state!r}, which is finished or closed.",
+        "Ask the person to reopen it, or pick another task.")
+
+
+def session_has_claim(display_id, held):
+    return ClaimError(
+        f"{display_id} was not claimed.",
+        f"This session already holds a live claim on {held}; a chat works on one task.",
+        f"Release {held} first (done, clarify or progress), then claim the next task.")
+
+
+def not_your_claim(display_id):
+    return CoordinatorError(
+        f"{display_id} was not released.",
+        "This session holds no live claim on the task.",
+        "Only the session that claimed a task can release it; ask the person otherwise.")
+
+
+def unknown_outcome(outcome, valid):
+    return CoordinatorError(
+        "The task was not released.",
+        f"Outcome {outcome!r} is not known.",
+        f"Use one of: {', '.join(valid)}.")
+
+
+def no_live_claim(display_id):
+    return CoordinatorError(
+        f"{display_id} was not released.",
+        "Nobody holds a live claim on this task.",
+        "Nothing to release.")
