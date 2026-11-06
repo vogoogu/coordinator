@@ -637,3 +637,38 @@ def needs_report(conn, session_id) -> bool:
     if not s or s["last_activity"] is None:
         return False
     return s["last_task_update"] is None or s["last_activity"] > s["last_task_update"]
+
+
+# ---------------------------------------------------------------- hook support
+def get_setting(conn, key: str, default=None):
+    row = conn.execute("SELECT value FROM setting WHERE key = ?", (key,)).fetchone()
+    return default if row is None or row["value"] is None else row["value"]
+
+
+def get_project(conn, key: str) -> dict:
+    """Project row by key (unknown_project if missing)."""
+    return _project_dict(_project_row(conn, key))
+
+
+def record_hook_warning(conn, session_id: str, rule: str, text: str) -> bool:
+    """Remember a pre-tool finding for the next post-tool. Each rule is kept at
+    most once per session; returns False if it was already recorded.
+    Not a task change, so no event row."""
+    with transaction(conn):
+        if conn.execute("SELECT 1 FROM hook_warning WHERE session_id = ? AND rule = ?",
+                        (session_id, rule)).fetchone():
+            return False
+        conn.execute("INSERT INTO hook_warning (session_id, rule, text, created)"
+                     " VALUES (?,?,?,?)", (session_id, rule, text, _now()))
+    return True
+
+
+def take_hook_warnings(conn, session_id: str) -> list:
+    """Texts of this session's pending warnings; they are marked shown."""
+    with transaction(conn):
+        rows = conn.execute("SELECT id, text FROM hook_warning WHERE session_id = ?"
+                            " AND shown IS NULL ORDER BY id", (session_id,)).fetchall()
+        now = _now()
+        for r in rows:
+            conn.execute("UPDATE hook_warning SET shown = ? WHERE id = ?", (now, r["id"]))
+    return [r["text"] for r in rows]

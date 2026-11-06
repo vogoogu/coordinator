@@ -1,0 +1,16 @@
+{
+  "session_id": "sess-1",
+  "transcript_path": "C:/Users/x/.claude/projects/p/sess-1.jsonl",
+  "cwd": "C:/work/proj",
+  "permission_mode": "default",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "C:/work/proj/a.txt",
+    "content": "x"
+  },
+  "tool_response": {
+    "success": true
+  },
+  "tool_use_id": "toolu_01"
+}

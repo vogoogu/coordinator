@@ -4,7 +4,7 @@ from pathlib import Path
 
 from . import paths
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS project (
@@ -81,6 +81,15 @@ CREATE TABLE IF NOT EXISTS setting (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+CREATE TABLE IF NOT EXISTS hook_warning (
+    id INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    rule TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created TEXT NOT NULL,
+    shown TEXT
+);
+CREATE INDEX IF NOT EXISTS hook_warning_session ON hook_warning(session_id);
 """
 
 

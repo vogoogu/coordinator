@@ -38,7 +38,7 @@ class CoreTasksTest(unittest.TestCase):
         return core.add_project(self.conn, str(root), PERSON)
 
     def test_schema_and_pragmas(self):
-        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], 1)
+        self.assertEqual(self.conn.execute("PRAGMA user_version").fetchone()[0], db.SCHEMA_VERSION)
         self.assertEqual(self.conn.execute("PRAGMA journal_mode").fetchone()[0], "wal")
         self.assertEqual(self.conn.execute("PRAGMA foreign_keys").fetchone()[0], 1)
         names = {r["name"] for r in self.conn.execute(

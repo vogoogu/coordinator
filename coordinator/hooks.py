@@ -1,0 +1,255 @@
+"""Claude Code hooks: a thin front over core. Fails open: never crashes a session.
+
+Run as `python -m coordinator.hooks <event>` or `python <path>\\hooks.py <event>`
+with event in session-start, pre-tool, post-tool, stop. The hook payload is JSON
+on stdin."""
+import json
+import os
+import sys
+import tempfile
+import traceback
+from dataclasses import dataclass
+from datetime import datetime
+
+if not __package__:  # started as a script: make `coordinator` importable
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from coordinator import config, core, db, messages, paths  # noqa: E402
+
+EDIT_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
+PACKET_NOTES = 3
+STOP_NOTE = "stopped without report after reminder"
+
+
+@dataclass
+class HookResult:
+    exit_code: int = 0
+    stdout: str = ""
+    stderr: str = ""
+
+
+# ------------------------------------------------------------------ logging
+def _append(path, text):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(text)
+
+
+def log_error(event: str) -> None:
+    """Log the current exception; app_home first, temp dir as fallback."""
+    text = (f"{datetime.now().isoformat(timespec='seconds')} {event}\n"
+            f"{traceback.format_exc()}\n")
+    try:
+        _append(paths.app_home() / "hook-errors.log", text)
+        return
+    except Exception:
+        pass
+    try:
+        _append(os.path.join(tempfile.gettempdir(), "coordinator-hook-errors.log"), text)
+    except Exception:
+        pass
+
+
+# ------------------------------------------------------------------ helpers
+def _target(payload: dict) -> str:
+    """Absolute path an edit tool works on, or '' if it has none."""
+    ti = payload.get("tool_input")
+    ti = ti if isinstance(ti, dict) else {}
+    target = ti.get("file_path") or ti.get("notebook_path") or ""
+    if not target:
+        return ""
+    if not os.path.isabs(target):
+        target = os.path.join(payload.get("cwd") or "", target)
+    return target
+
+
+def _project_of(conn, *candidates):
+    for c in candidates:
+        if c:
+            proj = core.project_for_path(conn, c)
+            if proj:
+                return proj
+    return None
+
+
+def _packet(conn, task: dict, session_id: str) -> str:
+    cfg = config.load_project(core.get_project(conn, task["project"])["root"])
+    root = core.get_project(conn, task["project"])["root"]
+    full = core.get_task(conn, task["id"])
+    notes = [c for c in full["comments"] if c["kind"] in ("handoff", "progress")]
+    lines = [
+        f"You hold task {task['id']}: {task['title']}",
+        f"Mode: {task['mode']} | State: {task['state']}",
+        f"Goal: {task['goal'] or '-'}",
+        f"Done when: {task['done_when'] or '-'}",
+        f"Scope: {task['scope'] or '-'}",
+        "Open points: " + ("; ".join(task["open_points"]) or "-"),
+    ]
+    if notes:
+        lines.append("Last notes:")
+        lines += [f"- [{c['kind']}] {c['text']}" for c in notes[-PACKET_NOTES:]]
+    lines += [
+        "Rules:",
+        f"1. Your session id is {session_id}; pass it to every coordinator MCP tool.",
+        "2. When you stop, call the MCP tool task_release with outcome done, "
+        "clarify or progress and a short note.",
+        f"3. You may not set done or raise the mode (modes: {', '.join(cfg.modes)}).",
+        f"4. Write only inside {root}.",
+    ]
+    return "\n".join(lines)
+
+
+def _finding(rule: str, what: str, why: str, fix: str):
+    return rule, messages.render(what, why, fix)
+
+
+# ------------------------------------------------------------------ events
+def _session_start(conn, payload, env) -> HookResult:
+    sid = payload.get("session_id") or ""
+    if not sid:
+        return HookResult()
+    cwd = payload.get("cwd") or ""
+    core.expire_leases(conn)
+    wanted = (env or {}).get("COORD_TASK")
+    if wanted:
+        try:
+            task = core.claim(conn, wanted, sid, payload.get("transcript_path") or "",
+                              cwd)
+        except core.CoordinatorError as e:
+            return HookResult(stdout=str(e) + "\n")
+        return HookResult(stdout=_packet(conn, task, sid) + "\n")
+    held = core.claim_for_session(conn, sid)
+    if held:
+        return HookResult(stdout=_packet(conn, core.get_task(conn, held["display_id"]),
+                                         sid) + "\n")
+    proj = _project_of(conn, cwd)
+    if not proj:
+        return HookResult()
+    cfg = config.load_project(proj["root"])
+    final = {s.name for s in cfg.states if s.kind in ("finished", "closed")}
+    n = sum(1 for t in core.list_tasks(conn, proj["key"]) if t["state"] not in final)
+    return HookResult(stdout=(
+        f"Coordinator: project {proj['key']} has {n} open task(s). Your session id is "
+        f"{sid}; to work on one, claim it with the MCP tool task_claim "
+        f"(task id and this session id).\n"))
+
+
+def _pre_tool(conn, payload, env) -> HookResult:
+    if payload.get("tool_name") not in EDIT_TOOLS:
+        return HookResult()
+    sid = payload.get("session_id") or ""
+    if not sid:
+        return HookResult()
+    cwd = payload.get("cwd") or ""
+    target = _target(payload)
+    held = core.claim_for_session(conn, sid)
+    findings = []
+    if held is None:
+        if not _project_of(conn, cwd, target):
+            return HookResult()
+        findings.append(_finding(
+            "no_claim",
+            "you are changing a file without a claimed task.",
+            "work in this project is tracked per task, and your session holds no claim.",
+            f"claim a task first with the MCP tool task_claim (session id {sid})."))
+    else:
+        task = core.get_task(conn, held["display_id"])
+        proj = core.get_project(conn, task["project"])
+        cfg = config.load_project(proj["root"])
+        if task["mode"] == cfg.modes[0]:
+            findings.append(_finding(
+                "read_mode",
+                f"{task['id']} is in mode {task['mode']!r}, which is read-only.",
+                "this mode allows looking and commenting, not changing files.",
+                "ask the person to raise the mode, or add a comment instead."))
+        if target and not paths.same_or_inside(target, proj["root"]):
+            findings.append(_finding(
+                "outside_scope",
+                f"{target} is outside the project folder of {task['id']}.",
+                f"a claimed task allows writing only inside {proj['root']}.",
+                "write inside the project folder, or ask the person."))
+    if not findings:
+        return HookResult()
+    if core.get_setting(conn, "enforcement", "warn") == "block":
+        return HookResult(2, "", "\n\n".join(t for _, t in findings) + "\n")
+    for rule, text in findings:
+        core.record_hook_warning(conn, sid, rule, text)
+    return HookResult()
+
+
+def _post_tool(conn, payload, env) -> HookResult:
+    sid = payload.get("session_id") or ""
+    if not sid:
+        return HookResult()
+    core.touch(conn, sid, payload.get("tool_name") or "", _target(payload))
+    texts = core.take_hook_warnings(conn, sid)
+    if not texts:
+        return HookResult()
+    out = {"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                  "additionalContext": "\n\n".join(texts)}}
+    return HookResult(stdout=json.dumps(out) + "\n")
+
+
+def _stop(conn, payload, env) -> HookResult:
+    sid = payload.get("session_id") or ""
+    if not sid or not core.needs_report(conn, sid):
+        return HookResult()
+    if payload.get("stop_hook_active"):
+        core.stop_without_report(conn, sid, STOP_NOTE)
+        return HookResult()
+    tid = core.claim_for_session(conn, sid)["display_id"]
+    return HookResult(2, "", (
+        f"WHAT: you worked on {tid} and are stopping without a report. "
+        "WHY: the next chat and Daria rely on it. "
+        "FIX: call release with outcome done (your part is finished), clarify "
+        "(you need an answer) or progress (you are only pausing), with a short note.\n"))
+
+
+EVENTS = {"session-start": _session_start, "pre-tool": _pre_tool,
+          "post-tool": _post_tool, "stop": _stop}
+
+
+def handle(event: str, payload: dict, env: dict) -> HookResult:
+    """Run one hook event. Any exception is logged and the hook exits 0."""
+    try:
+        fn = EVENTS.get(event)
+        if fn is None:
+            raise ValueError(f"unknown hook event {event!r}")
+        if not isinstance(payload, dict):
+            raise ValueError("hook payload is not a JSON object")
+        conn = db.connect()
+        try:
+            return fn(conn, payload, env or {})
+        finally:
+            conn.close()
+    except Exception:
+        log_error(str(event))
+        return HookResult()
+
+
+def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    event = argv[0] if argv else ""
+    try:
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
+    except Exception:
+        log_error(event)
+        return 0
+    res = handle(event, payload, dict(os.environ))
+    try:
+        sys.stdout.buffer.write(res.stdout.encode("utf-8"))
+        sys.stdout.buffer.flush()
+        sys.stderr.buffer.write(res.stderr.encode("utf-8"))
+        sys.stderr.buffer.flush()
+    except Exception:
+        log_error(event)
+        return 0
+    return res.exit_code
+
+
+if __name__ == "__main__":
+    try:
+        code = main()
+    except BaseException:
+        log_error("main")
+        code = 0
+    sys.exit(code)

@@ -1,0 +1,8 @@
+{
+  "session_id": "sess-1",
+  "transcript_path": "C:/Users/x/.claude/projects/p/sess-1.jsonl",
+  "cwd": "C:/work/proj",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false
+}
