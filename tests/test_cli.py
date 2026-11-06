@@ -208,7 +208,14 @@ class CliTest(unittest.TestCase):
         self.assertEqual(cmd["timeout"], 30)
         self.assertTrue(cmd["command"].startswith('python "'))
         self.assertTrue(cmd["command"].endswith('/coordinator/hooks.py" stop'))
-        self.assertIn("--scope user --env PYTHONPATH=", out)
+        repo = str(cli.REPO_ROOT).replace("/", "\\")
+        line = ('claude mcp add --transport stdio --env "PYTHONPATH=' + repo
+                + '" --scope user coordinator -- python -m coordinator.mcp_server')
+        self.assertIn("\n" + line + "\n", out)
+        self.assertEqual(
+            line, 'claude mcp add --transport stdio --env "PYTHONPATH='
+            + str(Path(cli.__file__).resolve().parent.parent)
+            + '" --scope user coordinator -- python -m coordinator.mcp_server')
 
 
 if __name__ == "__main__":

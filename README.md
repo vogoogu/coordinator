@@ -4,6 +4,13 @@ A small local task board for Claude Code chats. It keeps one list of tasks per
 project, lets a chat take a task (a "claim"), and makes sure the chat hands
 back a short report when it stops. Written in plain Python (standard library only).
 
+## Where to run the commands
+
+Run every `python -m coordinator ...` command from `C:\Projects\_coordinator`
+(the folder that contains the `coordinator` package). From any other folder, set
+`PYTHONPATH` to it first, for example `set PYTHONPATH=C:\Projects\_coordinator`
+in `cmd`.
+
 ## Start the board
 
     python -m coordinator board
@@ -27,7 +34,12 @@ Other commands: `list`, `show ID`, `create KEY "title"`, `state ID state`,
 Run `python -m coordinator install-help`. It prints the hook settings and the
 `claude mcp add` command. It changes nothing: read the text, then apply it
 yourself (merge the JSON into `%USERPROFILE%\.claude\settings.json`, run the
-`claude mcp add` line once).
+`claude mcp add` line once). The MCP line looks like this:
+
+    claude mcp add --transport stdio --env "PYTHONPATH=C:\Projects\_coordinator" --scope user coordinator -- python -m coordinator.mcp_server
+
+`--env` takes several values, so `--scope user` comes after it and before the
+server name `coordinator`; the `PYTHONPATH` value is quoted.
 
 ## Warn or block
 

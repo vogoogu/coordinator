@@ -183,8 +183,8 @@ def install_help_text() -> str:
         '(the "hooks" key):\n\n'
         f"{block}\n\n"
         "2. MCP server. Run this once in a terminal:\n\n"
-        f"claude mcp add --transport stdio --scope user --env PYTHONPATH={repo_back} "
-        "coordinator -- python -m coordinator.mcp_server\n\n"
+        f'claude mcp add --transport stdio --env "PYTHONPATH={repo_back}" '
+        "--scope user coordinator -- python -m coordinator.mcp_server\n\n"
         "The hooks act only inside registered projects. "
         "Start with enforcement warn (python -m coordinator enforcement warn).\n"
         "This command applies nothing; review the text and apply it by hand.\n")
