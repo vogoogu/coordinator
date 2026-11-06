@@ -693,3 +693,23 @@ def board_token(conn) -> str:
         conn.execute("INSERT OR IGNORE INTO setting (key, value) VALUES (?, ?)",
                      ("board_token", secrets.token_urlsafe(32)))
     return get_setting(conn, "board_token")
+
+
+ENFORCEMENT_VALUES = ("warn", "block")
+
+
+def set_enforcement(conn, value: str, actor: Actor) -> str:
+    """Person only: set the hook enforcement (warn or block); recorded as an event."""
+    if actor.type != "person":
+        raise messages.person_only("Changing the enforcement")
+    if value not in ENFORCEMENT_VALUES:
+        raise messages.CoordinatorError(
+            f"Enforcement {value!r} was not set.",
+            "Only these values are known: " + ", ".join(ENFORCEMENT_VALUES) + ".",
+            "Use warn or block.")
+    with transaction(conn):
+        old = get_setting(conn, "enforcement", "warn")
+        conn.execute("INSERT INTO setting (key, value) VALUES ('enforcement', ?)"
+                     " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (value,))
+        _event(conn, None, actor, "enforcement", old, value)
+    return value

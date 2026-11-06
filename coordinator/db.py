@@ -1,5 +1,7 @@
 """SQLite connection and schema. Rows are never deleted by the application."""
+import re
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 from . import paths
@@ -116,3 +118,27 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
             conn.execute("ROLLBACK")
             raise
     return conn
+
+
+_BACKUP_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}\.db$")
+
+
+def backup(conn: sqlite3.Connection, dest_dir: Path, keep: int = 14) -> Path:
+    """Copy the database to dest_dir/YYYY-MM-DD.db (local date, today's file is
+    overwritten) and keep only the newest `keep` dated files. Other files stay."""
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    target = dest_dir / f"{date.today().isoformat()}.db"
+    tmp = dest_dir / (target.name + ".tmp")
+    tmp.unlink(missing_ok=True)
+    out = sqlite3.connect(str(tmp))
+    try:
+        conn.backup(out)
+    finally:
+        out.close()
+    tmp.replace(target)
+    dated = sorted(p.name for p in dest_dir.iterdir()
+                   if p.is_file() and _BACKUP_NAME.match(p.name))
+    for name in dated[:-keep] if keep > 0 else dated:
+        (dest_dir / name).unlink()
+    return target
