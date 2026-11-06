@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import paths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS project (
@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS claim (
     started TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     ended TEXT,
-    end_reason TEXT
+    end_reason TEXT,
+    launch TEXT
 );
 CREATE INDEX IF NOT EXISTS claim_task ON claim(task_id);
 CREATE TABLE IF NOT EXISTS session_stat (
@@ -94,6 +95,14 @@ CREATE TABLE IF NOT EXISTS hook_warning (
 CREATE INDEX IF NOT EXISTS hook_warning_session ON hook_warning(session_id);
 """
 
+# Columns added after a table was first created: CREATE TABLE IF NOT EXISTS does
+# not add them to an existing database, so connect() adds any that are missing.
+ADDED_COLUMNS = (
+    ("session_stat", "last_tool", "TEXT"),   # version 2
+    ("session_stat", "last_path", "TEXT"),   # version 2
+    ("claim", "launch", "TEXT"),             # version 3: launch token (R32)
+)
+
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
     """Open (and if needed create) the database.
@@ -112,6 +121,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
             for stmt in SCHEMA.split(";"):
                 if stmt.strip():
                     conn.execute(stmt)
+            for table, column, decl in ADDED_COLUMNS:
+                have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+                if column not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
             conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             conn.execute("COMMIT")
         except BaseException:

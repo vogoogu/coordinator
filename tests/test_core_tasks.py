@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,31 @@ class CoreTasksTest(unittest.TestCase):
                   "session_stat", "setting"):
             self.assertIn(t, names)
         db.connect().close()  # idempotent
+
+    def test_migration_adds_claim_launch_to_old_database(self):
+        old = Path(self.tmp, "old.db")
+        c = sqlite3.connect(str(old))
+        c.executescript(
+            "CREATE TABLE claim (id INTEGER PRIMARY KEY, task_id INTEGER NOT NULL,"
+            " session_id TEXT NOT NULL, transcript_path TEXT, cwd TEXT,"
+            " started TEXT NOT NULL, last_seen TEXT NOT NULL, ended TEXT,"
+            " end_reason TEXT);"
+            "INSERT INTO claim (task_id, session_id, started, last_seen)"
+            " VALUES (1, 's', 'x', 'x');"
+            "PRAGMA user_version = 2;")
+        c.close()
+        conn = db.connect(old)
+        try:
+            cols = {r["name"] for r in conn.execute("PRAGMA table_info(claim)")}
+            self.assertIn("launch", cols)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0],
+                             db.SCHEMA_VERSION)
+            self.assertGreaterEqual(db.SCHEMA_VERSION, 3)
+            row = conn.execute("SELECT session_id, launch FROM claim").fetchone()
+            self.assertEqual((row["session_id"], row["launch"]), ("s", None))
+        finally:
+            conn.close()
+        db.connect(old).close()  # idempotent
 
     def test_create_assigns_number_per_project(self):
         self.project("KMU")

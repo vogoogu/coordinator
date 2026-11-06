@@ -462,5 +462,44 @@ class CoreClaimsTest(unittest.TestCase):
         self.assertEqual(full["comments"][-1]["text"], "question?")
 
 
+    # --------------------------------------------- launch token and /clear (R32)
+
+    def test_claim_stores_launch_token(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", launch="tok")
+        self.assertEqual(core.get_task(self.conn, t["id"])["claims"][0]["launch"], "tok")
+
+    def test_reclaim_after_clear_moves_claim_to_new_session(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", launch="tok")
+        r = core.reclaim_after_clear(self.conn, t["id"], "s2", "tok", "tp2", "cwd2")
+        self.assertEqual(r["state"], "building")
+        full = core.get_task(self.conn, t["id"])
+        old, new = full["claims"]
+        self.assertEqual((old["session_id"], old["end_reason"]), ("s1", "clear"))
+        self.assertIsNotNone(old["ended"])
+        self.assertEqual((new["session_id"], new["launch"], new["ended"],
+                          new["transcript_path"]), ("s2", "tok", None, "tp2"))
+        ev = self.events(t["id"], "release")[-1]
+        self.assertEqual((ev["actor_id"], ev["from_value"], ev["to_value"]),
+                         ("s2", "s1", "clear"))
+        self.assertEqual(self.events(t["id"], "claim")[-1]["to_value"], "s2")
+
+    def test_reclaim_after_clear_needs_same_token(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", launch="tok")
+        before = len(self.events(t["id"]))
+        for token in ("other", "", None):
+            self.assertIsNone(
+                core.reclaim_after_clear(self.conn, t["id"], "s2", token))
+        t2 = self.task()
+        core.claim(self.conn, t2["id"], "s3")  # no token stored
+        self.assertIsNone(core.reclaim_after_clear(self.conn, t2["id"], "s4", None))
+        self.assertIsNone(core.reclaim_after_clear(self.conn, t2["id"], "s4", ""))
+        self.assertEqual(len(self.events(t["id"])), before)
+        self.assertEqual(core.claim_for_session(self.conn, "s1")["display_id"], t["id"])
+        self.assertIsNone(core.claim_for_session(self.conn, "s2"))
+
+
 if __name__ == "__main__":
     unittest.main()

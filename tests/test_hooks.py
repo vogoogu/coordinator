@@ -114,6 +114,7 @@ class HooksTest(unittest.TestCase):
         for i in range(4):
             core.release(self.conn, tid, "old", "progress", f"note-{i}")
         core.release(self.conn, tid, "old", "done", "handoff-text")
+        core.set_state(self.conn, tid, "open", PERSON)  # back to waiting
         r = hooks.handle("session-start", fixture("session_start.json", cwd=self.root),
                          {"COORD_TASK": tid})
         self.assertNotIn("note-0", r.stdout)
@@ -140,6 +141,7 @@ class HooksTest(unittest.TestCase):
     def test_session_start_refused_claim_prints_refusal(self):
         tid = self.task()
         core.claim(self.conn, tid, "other")
+        core.set_state(self.conn, tid, "open", PERSON)  # waiting, claim still live
         r = hooks.handle("session-start", fixture("session_start.json", cwd=self.root),
                          {"COORD_TASK": tid})
         self.assertEqual(r.exit_code, 0)
@@ -147,6 +149,100 @@ class HooksTest(unittest.TestCase):
         self.assertIn("FIX:", r.stdout)
         self.assertIn("Your session id is sess-1", r.stdout)
         self.assertIn("has 1 open task(s)", r.stdout)
+
+    # ------------------------------ COORD_TASK only on startup, waiting (R30)
+    def launch(self, tid, source=None, sid="sess-1", token=None):
+        p = fixture("session_start.json", cwd=self.root, session_id=sid)
+        if source is None:
+            p.pop("source")
+        else:
+            p["source"] = source
+        env = {"COORD_TASK": tid}
+        if token is not None:
+            env["COORD_LAUNCH"] = token
+        return hooks.handle("session-start", p, env)
+
+    def test_coord_task_without_source_claims(self):
+        tid = self.task()
+        r = self.launch(tid, source=None)
+        self.assertIn("You hold task " + tid, r.stdout)
+        self.assertEqual(core.claim_for_session(self.conn, "sess-1")["display_id"], tid)
+
+    def test_compact_or_resume_after_done_does_not_reclaim(self):
+        for source in ("compact", "resume", "clear"):
+            with self.subTest(source=source):
+                tid = self.task(title="t-" + source)
+                self.launch(tid, "startup")
+                core.release(self.conn, tid, "sess-1", "done", "finished")
+                claims = self.counts()[2]
+                r = self.launch(tid, source)
+                self.assertEqual(r.exit_code, 0)
+                self.assertEqual(core.get_task(self.conn, tid)["state"], "review")
+                self.assertEqual(self.counts()[2], claims)
+                self.assertIsNone(core.claim_for_session(self.conn, "sess-1"))
+                self.assertEqual(len(r.stdout.strip().splitlines()), 1)
+                self.assertIn("Your session id is sess-1", r.stdout)
+
+    def test_startup_again_after_done_does_not_reclaim(self):
+        # typing `claude` again in the same console window: new session id
+        tid = self.task()
+        self.launch(tid, "startup")
+        core.release(self.conn, tid, "sess-1", "done", "finished")
+        r = self.launch(tid, "startup", sid="sess-9")
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "review")
+        self.assertIsNone(core.claim_for_session(self.conn, "sess-9"))
+        self.assertNotIn("WHAT:", r.stdout)
+        self.assertIn("Your session id is sess-9", r.stdout)
+
+    def test_compact_keeps_reattach_with_coord_task(self):
+        tid = self.task()
+        self.launch(tid, "startup")
+        r = self.launch(tid, "compact")
+        self.assertIn("You hold task " + tid, r.stdout)
+        self.assertEqual(self.counts()[2], 1)
+
+    def test_startup_coord_task_active_claimed_by_other_falls_back(self):
+        tid = self.task()
+        core.claim(self.conn, tid, "other")
+        before = self.counts()
+        r = self.launch(tid, "startup")
+        self.assertNotIn("WHAT:", r.stdout)
+        self.assertEqual(len(r.stdout.strip().splitlines()), 1)
+        self.assertEqual(self.counts(), before)
+
+    # ------------------------------------------- /clear with launch token (R32)
+    def test_clear_with_same_launch_token_reattaches(self):
+        tid = self.task(goal="the goal")
+        self.launch(tid, "startup", sid="sess-1", token="abc123")
+        r = self.launch(tid, "clear", sid="sess-2", token="abc123")
+        self.assertEqual(r.exit_code, 0)
+        self.assertIn("You hold task " + tid, r.stdout)
+        self.assertIn("sess-2", r.stdout)
+        self.assertIn("the goal", r.stdout)
+        self.assertEqual(core.claim_for_session(self.conn, "sess-2")["display_id"], tid)
+        self.assertIsNone(core.claim_for_session(self.conn, "sess-1"))
+        claims = core.get_task(self.conn, tid)["claims"]
+        self.assertEqual(claims[0]["end_reason"], "clear")
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "building")
+
+    def test_clear_with_other_or_missing_token_does_not_steal(self):
+        tid = self.task()
+        self.launch(tid, "startup", sid="sess-1", token="abc123")
+        for token in ("zzz999", None):
+            with self.subTest(token=token):
+                before = self.counts()
+                r = self.launch(tid, "clear", sid="sess-2", token=token)
+                self.assertEqual(r.exit_code, 0)
+                self.assertNotIn("You hold task", r.stdout)
+                self.assertEqual(self.counts()[:3], before[:3])
+                self.assertEqual(
+                    core.claim_for_session(self.conn, "sess-1")["display_id"], tid)
+                self.assertIsNone(core.claim_for_session(self.conn, "sess-2"))
+
+    def test_startup_stores_launch_token(self):
+        tid = self.task()
+        self.launch(tid, "startup", token="abc123")
+        self.assertEqual(core.get_task(self.conn, tid)["claims"][0]["launch"], "abc123")
 
     def test_session_start_expires_old_leases(self):
         tid = self.claimed()
@@ -346,6 +442,7 @@ class HooksTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("Umlaut äöü", r.stdout.decode("utf-8"))
         core.release(self.conn, tid, "sess-1", "clarify", "bye")
+        core.set_state(self.conn, tid, "open", PERSON)  # waiting again (R30)
         r = self.run_proc([sys.executable, "-m", "coordinator.hooks", "session-start"],
                           payload, COORD_TASK=tid, PYTHONPATH=str(REPO))
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -357,6 +357,16 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(kw["env"]["COORD_TASK"], "KMU-3")
         self.assertEqual(kw["creationflags"], subprocess.CREATE_NEW_CONSOLE)
 
+    def test_start_chat_passes_fresh_launch_token(self):
+        with mock.patch("subprocess.Popen") as popen:
+            launcher.start_chat("C:\\root", "KMU-3")
+            launcher.start_chat("C:\\root", "KMU-3")
+        tokens = [c.kwargs["env"]["COORD_LAUNCH"] for c in popen.call_args_list]
+        for tok in tokens:
+            self.assertRegex(tok, r"^[0-9a-f]{16}$")
+        self.assertNotEqual(tokens[0], tokens[1])
+        self.assertEqual(popen.call_args.args[0], ["cmd", "/k", "claude"])
+
 
 if __name__ == "__main__":
     unittest.main()

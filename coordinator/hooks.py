@@ -127,15 +127,29 @@ def _session_start(conn, payload, env) -> HookResult:
     if not sid:
         return HookResult()
     cwd = payload.get("cwd") or ""
+    transcript = payload.get("transcript_path") or ""
+    source = payload.get("source") or "startup"
     core.expire_leases(conn)
-    wanted = (env or {}).get("COORD_TASK")
-    if wanted:
+    wanted = env.get("COORD_TASK")
+    launch = env.get("COORD_LAUNCH") or None
+    if wanted and source == "clear" and launch:
+        # R32: /clear started a new session id in the window the board opened
         try:
-            task = core.claim(conn, wanted, sid, payload.get("transcript_path") or "",
-                              cwd)
+            task = core.reclaim_after_clear(conn, wanted, sid, launch, transcript, cwd)
+        except core.CoordinatorError:
+            task = None
+        if task:
+            return HookResult(stdout=_packet(conn, task, sid) + "\n")
+    elif wanted and source == "startup":
+        # R30: only a fresh start claims, and only a task that is still waiting;
+        # resume/compact/clear re-attach below instead of claiming again.
+        try:
+            task = core.claim(conn, wanted, sid, transcript, cwd, launch=launch,
+                              waiting_only=True)
         except core.CoordinatorError as e:
             return HookResult(stdout=f"{e}\n{_howto(conn, sid, cwd)}\n")
-        return HookResult(stdout=_packet(conn, task, sid) + "\n")
+        if task:
+            return HookResult(stdout=_packet(conn, task, sid) + "\n")
     held = core.claim_for_session(conn, sid)
     if held:
         return HookResult(stdout=_packet(conn, core.get_task(conn, held["display_id"]),

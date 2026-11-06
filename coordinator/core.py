@@ -488,8 +488,13 @@ def _end_claim(conn, claim_id, now, reason):
 
 
 def claim(conn, display_id, session_id, transcript_path="", cwd="",
-          now: datetime | None = None) -> dict:
-    """Claim a task for a chat session and move it to the first active state."""
+          now: datetime | None = None, launch: str | None = None,
+          waiting_only: bool = False) -> dict | None:
+    """Claim a task for a chat session and move it to the first active state.
+
+    `launch` is the board's launch token (COORD_LAUNCH), stored on the claim.
+    With `waiting_only` (the hook's COORD_TASK path, R30) a task that is not in a
+    waiting-kind state is left alone and None is returned, with nothing written."""
     actor = Actor("chat", session_id)
     with _write(conn):
         task, cfg = _load(conn, display_id)
@@ -498,11 +503,13 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
         holders = _live_claim_rows(conn, task_pk=pk)
         if any(h["session_id"] == session_id for h in holders):
             return _task_by_pk(conn, pk)  # already mine: nothing to do
+        kinds = {s.name: s.kind for s in cfg.states}
+        if waiting_only and kinds.get(task["state"]) != "waiting":
+            return None
         if holders:
             _refuse(conn, pk, actor,
                     messages.already_claimed(task["id"], holders[0]["session_id"]),
                     attempted)
-        kinds = {s.name: s.kind for s in cfg.states}
         if kinds.get(task["state"]) in ("finished", "closed"):
             _refuse(conn, pk, actor, messages.claim_final(task["id"], task["state"]),
                     attempted)
@@ -517,11 +524,44 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
         stamp = _stamp(now)
         conn.execute(
             "INSERT INTO claim (task_id, session_id, transcript_path, cwd, started,"
-            " last_seen) VALUES (?,?,?,?,?,?)",
-            (pk, session_id, transcript_path, cwd, stamp, stamp))
+            " last_seen, launch) VALUES (?,?,?,?,?,?,?)",
+            (pk, session_id, transcript_path, cwd, stamp, stamp, launch or None))
         _bump(conn, pk, stamp, inbox=0)
         _event(conn, pk, actor, "claim", None, session_id, at=stamp)
         _move(conn, task, first.name, actor, stamp)
+        _set_session(conn, session_id, last_task_update=stamp)
+    return _task_by_pk(conn, pk)
+
+
+def reclaim_after_clear(conn, display_id, session_id, launch, transcript_path="",
+                        cwd="") -> dict | None:
+    """/clear gave the chat a new session id (R32). If the live claim on the task
+    holds the same launch token under another session id, end it (end_reason
+    "clear") and give the task to `session_id`; the state is kept. Otherwise
+    write nothing and return None."""
+    if not launch:
+        return None
+    actor = Actor("chat", session_id)
+    with _write(conn):
+        task, _cfg = _load(conn, display_id)
+        pk = task["pk"]
+        holders = _live_claim_rows(conn, task_pk=pk)
+        old = [h for h in holders
+               if h["launch"] == launch and h["session_id"] != session_id]
+        if not old or len(old) != len(holders):
+            return None
+        if _live_claim_rows(conn, session_id=session_id):
+            return None  # this session already works on a task
+        stamp = _now()
+        for h in old:
+            _end_claim(conn, h["id"], stamp, "clear")
+            _event(conn, pk, actor, "release", h["session_id"], "clear", at=stamp)
+        conn.execute(
+            "INSERT INTO claim (task_id, session_id, transcript_path, cwd, started,"
+            " last_seen, launch) VALUES (?,?,?,?,?,?,?)",
+            (pk, session_id, transcript_path, cwd, stamp, stamp, launch))
+        _bump(conn, pk, stamp, inbox=0)
+        _event(conn, pk, actor, "claim", None, session_id, at=stamp)
         _set_session(conn, session_id, last_task_update=stamp)
     return _task_by_pk(conn, pk)
 
