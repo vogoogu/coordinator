@@ -376,8 +376,10 @@ class HooksTest(unittest.TestCase):
         r = self.stop()
         self.assertEqual(r.exit_code, 2)
         self.assertTrue(r.stderr.startswith("WHAT: you worked on " + tid))
-        self.assertIn("WHY: the next chat and Daria rely on it.", r.stderr)
-        self.assertIn("FIX: call release with outcome done", r.stderr)
+        self.assertIn("WHY: the next chat and the person rely on it.", r.stderr)
+        self.assertIn("FIX: call the MCP tool task_release with id " + tid
+                      + ", session_id sess-1 and outcome done", r.stderr)
+        self.assertNotIn("Daria", r.stderr)
 
     def test_stop_ignores_enforcement_setting(self):
         self.set_enforcement("warn")
@@ -395,6 +397,15 @@ class HooksTest(unittest.TestCase):
         self.assertIn("stopped without report after reminder",
                       [c["text"] for c in t["comments"]])
         self.assertIsNone(core.claim_for_session(self.conn, "sess-1"))
+
+    def test_stop_race_claim_gone_exits_silently(self):
+        self.claimed()
+        self.work()
+        with mock.patch.object(hooks.core, "claim_for_session", return_value=None):
+            r = self.stop()
+        self.assertEqual((r.exit_code, r.stdout, r.stderr), (0, "", ""))
+        log = Path(os.environ["COORDINATOR_HOME"]) / "hook-errors.log"
+        self.assertFalse(log.exists())
 
     def test_stop_silent_when_only_talking(self):
         self.claimed()

@@ -222,12 +222,16 @@ def _stop(conn, payload, env) -> HookResult:
     if payload.get("stop_hook_active"):
         core.stop_without_report(conn, sid, STOP_NOTE)
         return HookResult()
-    tid = core.claim_for_session(conn, sid)["display_id"]
+    held = core.claim_for_session(conn, sid)
+    if held is None:  # the claim ended after needs_report: nothing to remind
+        return HookResult()
+    tid = held["display_id"]
     return HookResult(2, "", (
         f"WHAT: you worked on {tid} and are stopping without a report. "
-        "WHY: the next chat and Daria rely on it. "
-        "FIX: call release with outcome done (your part is finished), clarify "
-        "(you need an answer) or progress (you are only pausing), with a short note.\n"))
+        "WHY: the next chat and the person rely on it. "
+        f"FIX: call the MCP tool task_release with id {tid}, session_id {sid} and "
+        "outcome done (your part is finished), clarify (you need an answer) or "
+        "progress (you are only pausing), with a short note.\n"))
 
 
 EVENTS = {"session-start": _session_start, "pre-tool": _pre_tool,

@@ -150,6 +150,9 @@ class CoreClaimsTest(unittest.TestCase):
         core.claim(self.conn, a["id"], "s1")
         err = self.assertRefused(core.claim, self.conn, b["id"], "s1", why=a["id"])
         self.assertIsInstance(err, ClaimError)
+        self.assertEqual(err.fix, f"Release {a['id']} first with outcome done or "
+                                  "clarify (progress keeps the claim), then claim "
+                                  "the next task.")
         self.assertEqual(core.get_task(self.conn, b["id"])["state"], "open")
         # after releasing, the session may claim another task
         core.release(self.conn, a["id"], "s1", "done", "fertig")

@@ -176,7 +176,8 @@ def session_has_claim(display_id, held):
     return ClaimError(
         f"{display_id} was not claimed.",
         f"This session already holds a live claim on {held}; a chat works on one task.",
-        f"Release {held} first (done, clarify or progress), then claim the next task.")
+        f"Release {held} first with outcome done or clarify (progress keeps the "
+        "claim), then claim the next task.")
 
 
 def not_your_claim(display_id):
