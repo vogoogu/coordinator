@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>$title</title>
+<link rel="stylesheet" href="/static/board.css"><script src="/static/board.js" defer></script></head>
+<body><header><a href="/">Coordinator</a></header><main>
+<h1>$id $title_text</h1>
+<table class="fields">$fields</table>
+<h2>Actions</h2>
+<div class="actions">$start_form $release_form $pin_form</div>
+<form method="post" action="/a/state">$token_field
+  <input type="hidden" name="id" value="$id">
+  <label>State <select name="state">$state_options</select></label>
+  <label>Note <input name="note"></label>
+  <button type="submit">Set state</button>
+</form>
+<form method="post" action="/a/mode">$token_field
+  <input type="hidden" name="id" value="$id">
+  <label>Mode <select name="mode">$mode_options</select></label>
+  <button type="submit">Set mode</button>
+</form>
+<form method="post" action="/a/comment">$token_field
+  <input type="hidden" name="id" value="$id">
+  <label>Kind <select name="kind">$kind_options</select></label>
+  <label>Text <textarea name="text"></textarea></label>
+  <button type="submit">Comment</button>
+</form>
+<h2>Claims</h2>
+<table><tr><th>Session</th><th>Started</th><th>Last seen</th><th>Ended</th><th>End reason</th><th>Transcript</th><th>Reopen</th></tr>$claims</table>
+<h2>Comments</h2>
+<ul class="comments">$comments</ul>
+<h2>History</h2>
+<table><tr><th>Time</th><th>Actor type</th><th>Actor id</th><th>Action</th><th>From</th><th>To</th><th>Note</th></tr>$history</table>
+</main></body></html>

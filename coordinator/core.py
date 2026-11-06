@@ -1,5 +1,6 @@
 """Task operations. Every write runs in one transaction with its event row."""
 import json
+import secrets
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -138,6 +139,8 @@ def create_task(conn, project_key: str, title: str, actor: Actor, goal="",
         raise messages.project_config_bad(proj["root"], "no waiting state defined")
     if inbox is None:
         inbox = actor.type == "chat"
+    if not str(title or "").strip():
+        raise messages.empty_value("the title")
     with _write(conn):
         if actor.type == "chat":
             row = conn.execute(
@@ -672,3 +675,21 @@ def take_hook_warnings(conn, session_id: str) -> list:
         for r in rows:
             conn.execute("UPDATE hook_warning SET shown = ? WHERE id = ?", (now, r["id"]))
     return [r["text"] for r in rows]
+
+
+# ---------------------------------------------------------------- board support
+def list_projects(conn) -> list:
+    return [_project_dict(r) for r in conn.execute("SELECT * FROM project ORDER BY key")]
+
+
+def live_claims(conn) -> dict:
+    """Live claims of all tasks, keyed by task display id."""
+    return {r["display_id"]: dict(r) for r in _live_claim_rows(conn)}
+
+
+def board_token(conn) -> str:
+    """The board's POST token; created on first use and kept in the settings."""
+    with transaction(conn):
+        conn.execute("INSERT OR IGNORE INTO setting (key, value) VALUES (?, ?)",
+                     ("board_token", secrets.token_urlsafe(32)))
+    return get_setting(conn, "board_token")

@@ -198,3 +198,10 @@ def no_live_claim(display_id):
         f"{display_id} was not released.",
         "Nobody holds a live claim on this task.",
         "Nothing to release.")
+
+
+def cannot_start(display_id, reason):
+    return CoordinatorError(
+        f"Task {display_id} was not started.",
+        reason,
+        "Start only tasks in a waiting state that no chat holds; release it first if needed.")

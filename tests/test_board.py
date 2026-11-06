@@ -1,0 +1,330 @@
+import getpass
+import http.client
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+import threading
+import unittest
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest import mock
+from urllib.parse import urlencode
+
+from coordinator import board, core, db, launcher
+
+PERSON = core.Actor("person", "daria")
+
+
+class BoardTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="coord_board_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self._old = os.environ.get("COORDINATOR_HOME")
+        os.environ["COORDINATOR_HOME"] = os.path.join(self.tmp, "home")
+        self.addCleanup(self._restore)
+        self.conn = db.connect()
+        self.addCleanup(self.conn.close)
+        self.roots = {}
+        self.make_project("a folder with spaces", "PA")
+        self.make_project("other", "PB")
+        self.server = board.make_server(port=0)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.addCleanup(self._stop)
+        self.token = self.get_json("/api/index")["token"]
+
+    def _stop(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(5)
+
+    def _restore(self):
+        if self._old is None:
+            os.environ.pop("COORDINATOR_HOME", None)
+        else:
+            os.environ["COORDINATOR_HOME"] = self._old
+
+    def make_project(self, folder, key):
+        root = Path(self.tmp, folder)
+        (root / ".coordinator").mkdir(parents=True)
+        (root / ".coordinator" / "project.toml").write_text(
+            f'key = "{key}"\nname = "Name {key}"\n', encoding="utf-8")
+        self.roots[key] = core.add_project(self.conn, str(root), PERSON)["root"]
+
+    def task(self, key="PA", title="Build it", **kw):
+        return core.create_task(self.conn, key, title, PERSON, **kw)["id"]
+
+    def origin(self):
+        return f"http://127.0.0.1:{self.port}"
+
+    def request(self, method, path, form=None, headers=None, host=True):
+        h = {}
+        if host:
+            h["Host"] = f"127.0.0.1:{self.port}"
+        h.update(headers or {})
+        body = urlencode(form).encode() if form is not None else None
+        if body is not None:
+            h["Content-Type"] = "application/x-www-form-urlencoded"
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            c.request(method, path, body=body, headers=h)
+            r = c.getresponse()
+            return r.status, r.read().decode("utf-8"), dict(r.getheaders())
+        finally:
+            c.close()
+
+    def get(self, path, **kw):
+        return self.request("GET", path, **kw)
+
+    def get_json(self, path):
+        status, body, _ = self.get(path)
+        self.assertEqual(status, 200, body)
+        return json.loads(body)
+
+    def post(self, path, form, token=True, origin=True, headers=None):
+        f = dict(form)
+        if token:
+            f["token"] = self.token
+        h = dict(headers or {})
+        if origin:
+            h.setdefault("Origin", self.origin())
+        return self.request("POST", path, form=f, headers=h)
+
+    # ------------------------------------------------------------ the brief's tests
+    def test_index_lists_needs_you_across_projects(self):
+        a = self.task("PA", "Check me")
+        core.set_state(self.conn, a, "review", PERSON, note="x")
+        b = self.task("PB", "Unclear one")
+        core.set_state(self.conn, b, "clarify", PERSON, note="x")
+        status, body, _ = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn(f'href="/t/{a}"', body)
+        self.assertIn(f'href="/t/{b}"', body)
+        self.assertIn("Check me", body)
+        self.assertIn("Unclear one", body)
+        self.assertIn("warn", body)  # enforcement default
+        data = self.get_json("/api/index")
+        self.assertEqual({p["key"] for p in data["projects"]}, {"PA", "PB"})
+        self.assertEqual({i["id"] for i in data["needs_you"]}, {a, b})
+
+    def test_project_board_columns_follow_config(self):
+        self.task("PA")
+        body = self.get("/p/PA")[1]
+        labels = ["Open", "Ready", "In work", "Needs clarification", "To check",
+                  "Done", "Dropped"]
+        pos = [body.index(f">{label}<") for label in labels]
+        self.assertEqual(pos, sorted(pos))
+        self.assertIn('action="/a/create"', body)
+
+    def test_task_page_shows_history_and_transcript_path(self):
+        tid = self.task("PA")
+        core.claim(self.conn, tid, "sess-1", transcript_path="C:\\t\\x y\\s.jsonl")
+        core.release(self.conn, tid, "sess-1", "done", "all done")
+        body = self.get(f"/t/{tid}")[1]
+        self.assertIn("C:\\t\\x y\\s.jsonl", body)
+        self.assertIn("claim", body)
+        self.assertIn("release", body)
+        self.assertIn("all done", body)
+        self.assertIn("claude --resume sess-1", body)
+        self.assertIn("Copy", body)
+
+    def test_post_without_token_is_403(self):
+        tid = self.task()
+        status, _, _ = self.post("/a/state", {"id": tid, "state": "done"}, token=False)
+        self.assertEqual(status, 403)
+        f = {"id": tid, "state": "done", "token": "wrong"}
+        status, _, _ = self.request("POST", "/a/state", form=f,
+                                    headers={"Origin": self.origin()})
+        self.assertEqual(status, 403)
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "open")
+
+    def test_post_with_foreign_origin_is_403(self):
+        tid = self.task()
+        for origin in ("http://evil.example", f"http://127.0.0.1:{self.port + 1}",
+                       "null"):
+            status, _, _ = self.post("/a/state", {"id": tid, "state": "done"},
+                                     headers={"Origin": origin})
+            self.assertEqual(status, 403, origin)
+        status, _, _ = self.post("/a/state", {"id": tid, "state": "done"}, origin=False,
+                                 headers={"Referer": "http://evil.example/x"})
+        self.assertEqual(status, 403)
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "open")
+
+    def test_start_calls_launcher_with_root_and_id(self):
+        tid = self.task("PA")
+        with mock.patch("coordinator.launcher.start_chat") as start:
+            status, _, h = self.post("/a/start", {"id": tid})
+        self.assertEqual(status, 303)
+        self.assertEqual(h["Location"], f"/t/{tid}")
+        start.assert_called_once_with(self.roots["PA"], tid)
+
+    def test_person_set_done_via_board_records_person_actor(self):
+        tid = self.task()
+        status, _, h = self.post("/a/state", {"id": tid, "state": "done", "note": "ok"})
+        self.assertEqual(status, 303)
+        self.assertEqual(h["Location"], f"/t/{tid}")
+        t = core.get_task(self.conn, tid)
+        self.assertEqual(t["state"], "done")
+        ev = [e for e in t["history"] if e["action"] == "state"][-1]
+        self.assertEqual((ev["actor_type"], ev["actor_id"]),
+                         ("person", getpass.getuser()))
+
+    def test_html_escapes_task_text(self):
+        tid = self.task("PA", "<script>alert(1)</script>", goal="<b>g</b>")
+        core.comment(self.conn, tid, PERSON, "comment", "<img src=x>")
+        for path in ("/", "/p/PA", f"/t/{tid}"):
+            body = self.get(path)[1]
+            self.assertNotIn("<script>alert", body, path)
+            self.assertNotIn("<img src=x>", body, path)
+        self.assertIn("&lt;script&gt;", self.get("/p/PA")[1])
+        self.conn.execute("UPDATE task SET inbox = 1")  # shows on index via Needs you
+        self.assertIn("&lt;script&gt;", self.get("/")[1])
+
+    # ------------------------------------------------------------ extra
+    def test_wrong_host_is_403(self):
+        for host in ("evil.example", f"127.0.0.1:{self.port + 1}", "127.0.0.1"):
+            status, _, _ = self.request("GET", "/", headers={"Host": host}, host=False)
+            self.assertEqual(status, 403, host)
+        status, _, _ = self.request("GET", "/", headers={"Host": f"localhost:{self.port}"},
+                                    host=False)
+        self.assertEqual(status, 200)
+
+    def test_post_with_token_but_no_origin_or_referer_is_403(self):
+        tid = self.task()
+        status, _, _ = self.post("/a/state", {"id": tid, "state": "done"}, origin=False)
+        self.assertEqual(status, 403)
+        status, _, _ = self.post("/a/state", {"id": tid, "state": "done"}, origin=False,
+                                 headers={"Referer": f"http://localhost:{self.port}/t/x"})
+        self.assertEqual(status, 303)
+
+    def test_api_unchanged_by_swapping_templates_and_css(self):
+        tid = self.task()
+        paths = ["/api/index", "/api/project/PA", f"/api/task/{tid}"]
+        before = [self.get_json(p) for p in paths]
+        page_before = self.get("/")[1]
+        alt = Path(self.tmp, "alt")
+        shutil.copytree(board.WEB_DIR, alt)
+        for f in (alt / "templates").glob("*.html"):
+            f.write_text(f.read_text(encoding="utf-8") + "<!-- swapped -->",
+                         encoding="utf-8")
+        (alt / "static" / "board.css").write_text("body{color:red}", encoding="utf-8")
+        with mock.patch.object(board, "TEMPLATE_DIR", alt / "templates"), \
+                mock.patch.object(board, "STATIC_DIR", alt / "static"):
+            self.assertEqual([self.get_json(p) for p in paths], before)
+            self.assertIn("swapped", self.get("/")[1])
+            self.assertEqual(self.get("/static/board.css")[1], "body{color:red}")
+        self.assertEqual(self.get("/")[1], page_before)
+
+    def test_unknown_state_gets_its_own_column(self):
+        tid = self.task()
+        self.conn.execute("UPDATE task SET state = 'weird'")
+        data = self.get_json("/api/project/PA")
+        col = [c for c in data["columns"] if c["label"] == "Unknown state"]
+        self.assertEqual(len(col), 1)
+        self.assertEqual([c["id"] for c in col[0]["cards"]], [tid])
+        self.assertIn(">Unknown state<", self.get("/p/PA")[1])
+
+    def test_inbox_tasks_only_in_inbox_strip(self):
+        tid = self.task()
+        self.conn.execute("UPDATE task SET inbox = 1")
+        data = self.get_json("/api/project/PA")
+        self.assertEqual([c["id"] for c in data["inbox"]], [tid])
+        self.assertTrue(all(not c["cards"] for c in data["columns"]))
+
+    def test_needs_you_lists_expiring_lease(self):
+        tid = self.task()
+        old = datetime.now(timezone.utc) - timedelta(hours=3, minutes=45)
+        core.claim(self.conn, tid, "sess-old", now=old)
+        fresh = self.task("PB", "fresh")
+        core.claim(self.conn, fresh, "sess-new")
+        items = self.get_json("/api/index")["needs_you"]
+        self.assertEqual([i["id"] for i in items], [tid])
+        self.assertIn("lease", items[0]["reasons"][0])
+
+    def test_card_shows_holder_blocked_and_open_points(self):
+        tid = self.task()
+        core.claim(self.conn, tid, "sess-9")
+        core.set_blocked(self.conn, tid, PERSON, "waiting for key")
+        core.set_open_points(self.conn, tid, PERSON, ["which db?"])
+        body = self.get("/p/PA")[1]
+        for s in ("sess-9", "waiting for key", "which db?"):
+            self.assertIn(s, body)
+
+    def test_task_page_actions_and_start_visibility(self):
+        tid = self.task()
+        body = self.get(f"/t/{tid}")[1]
+        self.assertIn('action="/a/start"', body)
+        self.assertIn(f'name="token" value="{self.token}"', body)
+        self.assertNotIn('action="/a/force-release"', body)
+        core.claim(self.conn, tid, "s1")
+        body = self.get(f"/t/{tid}")[1]
+        self.assertNotIn('action="/a/start"', body)
+        self.assertIn('action="/a/force-release"', body)
+
+    def test_start_refused_with_live_claim(self):
+        tid = self.task()
+        core.claim(self.conn, tid, "s1")
+        with mock.patch("coordinator.launcher.start_chat") as start:
+            status, body, _ = self.post("/a/start", {"id": tid})
+        self.assertEqual(status, 400)
+        self.assertIn("WHAT:", body)
+        start.assert_not_called()
+
+    def test_coordinator_error_shows_what_why_fix_escaped(self):
+        status, body, _ = self.post("/a/state", {"id": "PA-99", "state": "<x>"})
+        self.assertEqual(status, 400)
+        for w in ("WHAT:", "WHY:", "FIX:"):
+            self.assertIn(w, body)
+        self.assertIn("href=", body)
+
+    def test_create_comment_mode_pin_force_release(self):
+        status, _, h = self.post("/a/create", {"project": "PA", "title": "New <t>",
+                                               "goal": "g", "done_when": "d",
+                                               "scope": "s"})
+        self.assertEqual(status, 303)
+        tid = h["Location"].rsplit("/", 1)[1]
+        t = core.get_task(self.conn, tid)
+        self.assertEqual((t["title"], t["goal"], t["inbox"]), ("New <t>", "g", False))
+        self.assertEqual(self.post("/a/comment", {"id": tid, "kind": "question",
+                                                  "text": "why?"})[0], 303)
+        self.assertEqual(self.post("/a/mode", {"id": tid, "mode": "write"})[0], 303)
+        self.assertEqual(core.get_task(self.conn, tid)["mode"], "write")
+        self.conn.execute("UPDATE task SET inbox = 1")
+        self.assertEqual(self.post("/a/pin", {"id": tid})[0], 303)
+        self.assertFalse(core.get_task(self.conn, tid)["inbox"])
+        core.claim(self.conn, tid, "s1")
+        self.assertEqual(self.post("/a/force-release", {"id": tid})[0], 303)
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "clarify")
+
+    def test_unknown_route_404_and_static(self):
+        self.assertEqual(self.get("/nope")[0], 404)
+        self.assertEqual(self.get("/static/../board.py")[0], 404)
+        self.assertEqual(self.post("/a/nope", {})[0], 404)
+        status, body, h = self.get("/static/board.css")
+        self.assertEqual(status, 200)
+        self.assertIn("text/css", h["Content-Type"])
+        self.assertIn(":root", body)
+        self.assertEqual(self.get("/static/board.js")[0], 200)
+
+    def test_no_external_resources(self):
+        body = self.get("/")[1] + self.get("/p/PA")[1]
+        self.assertNotIn("http://", body.replace("http://127.0.0.1", ""))
+        self.assertNotIn("https://", body)
+
+
+class LauncherTest(unittest.TestCase):
+    def test_start_chat_opens_new_console_with_task_env(self):
+        with mock.patch("subprocess.Popen") as popen:
+            launcher.start_chat("C:\\root dir", "KMU-3")
+        args, kw = popen.call_args
+        self.assertEqual(args[0], ["cmd", "/k", "claude"])
+        self.assertEqual(kw["cwd"], "C:\\root dir")
+        self.assertEqual(kw["env"]["COORD_TASK"], "KMU-3")
+        self.assertEqual(kw["creationflags"], subprocess.CREATE_NEW_CONSOLE)
+
+
+if __name__ == "__main__":
+    unittest.main()
