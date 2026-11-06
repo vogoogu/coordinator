@@ -129,14 +129,23 @@ def project_for_path(conn, path: str) -> dict | None:
     return _project_dict(best) if best else None
 
 
+def _config(root: str, what: str):
+    """The project config; a broken project file becomes a CoordinatorError."""
+    try:
+        return config.load_project(root)
+    except config.ConfigError as e:
+        raise messages.project_config_bad(root, e, what) from None
+
+
 def create_task(conn, project_key: str, title: str, actor: Actor, goal="",
                 done_when="", scope="", origin="",
                 inbox: bool | None = None) -> dict:
     proj = _project_row(conn, project_key)
-    cfg = config.load_project(proj["root"])
+    cfg = _config(proj["root"], "The task was not created.")
     first = next((s for s in cfg.states if s.kind == "waiting"), None)
     if first is None:
-        raise messages.project_config_bad(proj["root"], "no waiting state defined")
+        raise messages.project_config_bad(proj["root"], "no waiting state defined",
+                                          "The task was not created.")
     if inbox is None:
         inbox = actor.type == "chat"
     if not str(title or "").strip():
@@ -235,7 +244,8 @@ def _load(conn, display_id):
         raise messages.unknown_task(display_id)
     root = conn.execute("SELECT root FROM project WHERE id = ?",
                         (row["project_id"],)).fetchone()["root"]
-    return _task_dict(row), config.load_project(root)
+    task = _task_dict(row)
+    return task, _config(root, f"{task['id']} was not changed.")
 
 
 def _live_claims(conn, task_pk) -> list:
@@ -520,7 +530,9 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
                     attempted)
         first = next((s for s in cfg.states if s.kind == "active"), None)
         if first is None:
-            raise messages.project_config_bad(task["project"], "no active state defined")
+            raise messages.project_config_bad(
+                _project_row(conn, task["project"])["root"], "no active state defined",
+                f"{task['id']} was not claimed.")
         stamp = _stamp(now)
         conn.execute(
             "INSERT INTO claim (task_id, session_id, transcript_path, cwd, started,"
@@ -663,7 +675,10 @@ def expire_leases(conn, now: datetime | None = None, hours: float = LEASE_HOURS)
         for c in _live_claim_rows(conn):
             if datetime.fromisoformat(c["last_seen"]) >= cutoff:
                 continue
-            task, cfg = _load(conn, c["display_id"])
+            try:
+                task, cfg = _load(conn, c["display_id"])
+            except CoordinatorError:
+                continue  # broken project file: leave this claim, expire the rest
             s = conn.execute("SELECT * FROM session_stat WHERE session_id = ?",
                              (c["session_id"],)).fetchone()
             last = "none"

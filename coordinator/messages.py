@@ -1,4 +1,5 @@
 """Refusal texts: every refusal says WHAT happened, WHY, and how to FIX it."""
+import os
 
 
 class CoordinatorError(Exception):
@@ -35,11 +36,14 @@ def project_exists(key, root):
         "Use another key in .coordinator\\project.toml, or use the existing project.")
 
 
-def project_config_bad(root, detail):
+def project_config_bad(root, detail, what=None):
+    """The project file of `root` is missing or broken. `what` says what was
+    not done (default: the project was not added)."""
+    file = os.path.join(str(root), ".coordinator", "project.toml")
     return CoordinatorError(
-        f"The project at {root} was not added.",
-        f"Its configuration cannot be used: {detail}",
-        "Fix .coordinator\\project.toml in that folder and try again.")
+        what or f"The project at {root} was not added.",
+        f"Its project file {file} cannot be used: {detail}",
+        f"Fix {file} and try again.")
 
 
 def create_limit(limit):

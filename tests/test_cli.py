@@ -76,6 +76,21 @@ class CliTest(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_broken_project_file_prints_what_why_fix(self):
+        folder = self.init()
+        self.assertEqual(self.run_cli("create", "PX", "First task")[0], 0)
+        toml = Path(folder, ".coordinator", "project.toml")
+        toml.write_text("key = [broken", encoding="utf-8")
+        for argv in (("create", "PX", "Second"), ("state", "PX-1", "done"),
+                     ("mode", "PX-1", "write")):
+            code, out, err = self.run_cli(*argv)
+            self.assertEqual(code, 1, argv)
+            lines = err.strip().splitlines()
+            self.assertEqual([l.split(":")[0] for l in lines], ["WHAT", "WHY", "FIX"])
+            self.assertIn(os.path.join(paths.norm(folder), ".coordinator",
+                                       "project.toml"), err)
+            self.assertIn("not valid TOML", err)
+
     def test_unknown_task_prints_what_why_fix(self):
         code, out, err = self.run_cli("show", "NOPE-9")
         self.assertEqual(code, 1)

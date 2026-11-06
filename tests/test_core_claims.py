@@ -504,5 +504,22 @@ class CoreClaimsTest(unittest.TestCase):
         self.assertIsNone(core.claim_for_session(self.conn, "s2"))
 
 
+    # ------------------------------------------------ broken project file
+
+    def test_broken_project_file_is_a_coordinator_error(self):
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1", now=T0)
+        Path(self.tmp, "kmu", ".coordinator", "project.toml").write_text(
+            "key = [", encoding="utf-8")
+        e = self.assertRefused(core.set_state, self.conn, t["id"], "review", PERSON,
+                               why="project.toml")
+        self.assertIn("was not changed", e.what)
+        self.assertRefused(core.create_task, self.conn, "KMU", "x", PERSON,
+                           why="not valid TOML")
+        # expiry skips the broken project instead of failing as a whole
+        self.assertEqual(core.expire_leases(self.conn, now=T0 + timedelta(hours=9)), [])
+        self.assertIsNotNone(core.claim_for_session(self.conn, "s1"))
+
+
 if __name__ == "__main__":
     unittest.main()
