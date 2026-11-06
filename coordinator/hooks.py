@@ -14,7 +14,12 @@ from datetime import datetime
 if not __package__:  # started as a script: make `coordinator` importable
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from coordinator import config, core, db, messages, paths  # noqa: E402
+try:
+    from coordinator import config, core, db, messages, paths  # noqa: E402
+    _IMPORT_FAILURE = None
+except Exception:  # fail open: an import problem must not break the session
+    config = core = db = messages = paths = None
+    _IMPORT_FAILURE = traceback.format_exc()
 
 EDIT_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 PACKET_NOTES = 3
@@ -72,8 +77,8 @@ def _project_of(conn, *candidates):
 
 
 def _packet(conn, task: dict, session_id: str) -> str:
-    cfg = config.load_project(core.get_project(conn, task["project"])["root"])
     root = core.get_project(conn, task["project"])["root"]
+    cfg = config.load_project(root)
     full = core.get_task(conn, task["id"])
     notes = [c for c in full["comments"] if c["kind"] in ("handoff", "progress")]
     lines = [
@@ -98,6 +103,20 @@ def _packet(conn, task: dict, session_id: str) -> str:
     return "\n".join(lines)
 
 
+def _howto(conn, sid: str, cwd: str) -> str:
+    """One line: open tasks of the project (if any) and how to claim, with the
+    session id (R25)."""
+    claim = (f"Your session id is {sid}; to work on a task, claim it with the MCP "
+             "tool task_claim (task id and this session id).")
+    proj = _project_of(conn, cwd)
+    if not proj:
+        return f"Coordinator: {claim}"
+    cfg = config.load_project(proj["root"])
+    final = {s.name for s in cfg.states if s.kind in ("finished", "closed")}
+    n = sum(1 for t in core.list_tasks(conn, proj["key"]) if t["state"] not in final)
+    return f"Coordinator: project {proj['key']} has {n} open task(s). {claim}"
+
+
 def _finding(rule: str, what: str, why: str, fix: str):
     return rule, messages.render(what, why, fix)
 
@@ -115,22 +134,15 @@ def _session_start(conn, payload, env) -> HookResult:
             task = core.claim(conn, wanted, sid, payload.get("transcript_path") or "",
                               cwd)
         except core.CoordinatorError as e:
-            return HookResult(stdout=str(e) + "\n")
+            return HookResult(stdout=f"{e}\n{_howto(conn, sid, cwd)}\n")
         return HookResult(stdout=_packet(conn, task, sid) + "\n")
     held = core.claim_for_session(conn, sid)
     if held:
         return HookResult(stdout=_packet(conn, core.get_task(conn, held["display_id"]),
                                          sid) + "\n")
-    proj = _project_of(conn, cwd)
-    if not proj:
+    if not _project_of(conn, cwd):
         return HookResult()
-    cfg = config.load_project(proj["root"])
-    final = {s.name for s in cfg.states if s.kind in ("finished", "closed")}
-    n = sum(1 for t in core.list_tasks(conn, proj["key"]) if t["state"] not in final)
-    return HookResult(stdout=(
-        f"Coordinator: project {proj['key']} has {n} open task(s). Your session id is "
-        f"{sid}; to work on one, claim it with the MCP tool task_claim "
-        f"(task id and this session id).\n"))
+    return HookResult(stdout=_howto(conn, sid, cwd) + "\n")
 
 
 def _pre_tool(conn, payload, env) -> HookResult:
@@ -211,6 +223,8 @@ EVENTS = {"session-start": _session_start, "pre-tool": _pre_tool,
 def handle(event: str, payload: dict, env: dict) -> HookResult:
     """Run one hook event. Any exception is logged and the hook exits 0."""
     try:
+        if _IMPORT_FAILURE:
+            raise ImportError(_IMPORT_FAILURE)
         fn = EVENTS.get(event)
         if fn is None:
             raise ValueError(f"unknown hook event {event!r}")
@@ -240,9 +254,9 @@ def main(argv=None) -> int:
         sys.stdout.buffer.flush()
         sys.stderr.buffer.write(res.stderr.encode("utf-8"))
         sys.stderr.buffer.flush()
-    except Exception:
+    except BaseException:
         log_error(event)
-        return 0
+        os._exit(0)  # a second flush failure at shutdown must not change the status
     return res.exit_code
 
 

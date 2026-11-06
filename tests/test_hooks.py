@@ -135,7 +135,7 @@ class HooksTest(unittest.TestCase):
         self.assertEqual(r.exit_code, 0)
         self.assertEqual(len(r.stdout.strip().splitlines()), 1)
         self.assertIn("sess-1", r.stdout)
-        self.assertIn("1", r.stdout)
+        self.assertIn("has 1 open task(s)", r.stdout)
 
     def test_session_start_refused_claim_prints_refusal(self):
         tid = self.task()
@@ -145,6 +145,8 @@ class HooksTest(unittest.TestCase):
         self.assertEqual(r.exit_code, 0)
         self.assertIn("WHAT:", r.stdout)
         self.assertIn("FIX:", r.stdout)
+        self.assertIn("Your session id is sess-1", r.stdout)
+        self.assertIn("has 1 open task(s)", r.stdout)
 
     def test_session_start_expires_old_leases(self):
         tid = self.claimed()
@@ -360,6 +362,47 @@ class HooksTest(unittest.TestCase):
         r = self.run_proc([sys.executable, script], b"{}")
         self.assertEqual(r.returncode, 0)
         self.assertTrue((Path(os.environ["COORDINATOR_HOME"]) / "hook-errors.log").exists())
+
+    def test_import_failure_fails_open_in_script_mode(self):
+        # a lone copy of hooks.py has no `coordinator` package next to it
+        lone = os.path.join(self.tmp, "lone", "tools")
+        os.makedirs(lone)
+        shutil.copy(REPO / "coordinator" / "hooks.py", lone)
+        faketmp = os.path.join(self.tmp, "faketmp")
+        os.makedirs(faketmp)
+        r = self.run_proc([sys.executable, os.path.join(lone, "hooks.py"), "stop"],
+                          b"{}", TEMP=faketmp, TMP=faketmp)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, b"")
+        log = Path(faketmp) / "coordinator-hook-errors.log"
+        self.assertIn("coordinator", log.read_text(encoding="utf-8"))
+
+    def test_handle_fails_open_on_import_failure(self):
+        faketmp = os.path.join(self.tmp, "faketmp")
+        os.makedirs(faketmp)
+        with mock.patch.object(hooks, "_IMPORT_FAILURE", "ImportError: boom"),                 mock.patch.object(hooks, "paths", None),                 mock.patch("tempfile.gettempdir", return_value=faketmp):
+            r = hooks.handle("stop", {}, {})
+        self.assertEqual(r.exit_code, 0)
+        self.assertIn("boom", (Path(faketmp) / "coordinator-hook-errors.log"
+                               ).read_text(encoding="utf-8"))
+
+    def test_broken_output_pipe_exits_zero(self):
+        class Broken:
+            def write(self, b):
+                raise BrokenPipeError()
+            flush = write
+
+        class Err:
+            buffer = Broken()
+
+        class In:
+            buffer = mock.Mock(read=lambda: b"{}")
+
+        with mock.patch("sys.stdin", In()), mock.patch("sys.stdout", Err()),                 mock.patch.object(hooks, "handle",
+                                  return_value=hooks.HookResult(0, "x", "")),                 mock.patch("os._exit", side_effect=SystemExit(0)) as ex:
+            with self.assertRaises(SystemExit):
+                hooks.main(["stop"])
+        ex.assert_called_once_with(0)
 
 
 if __name__ == "__main__":
