@@ -289,6 +289,10 @@ API = {"index": (api_index, page_index), "project": (api_project, page_project),
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "CoordinatorBoard"
+    # Buffered output: headers and body leave in one send when the request ends.
+    # Unbuffered, the body went out as a second small segment that was sometimes
+    # lost when the server closed the socket right after it (seen on Windows).
+    wbufsize = -1
 
     def log_message(self, *args):
         pass
@@ -303,6 +307,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        if ctype.startswith("text/html"):  # no framing: clickjacking of the buttons
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Security-Policy", "frame-ancestors 'none'")
+        if self.close_connection:
+            self.send_header("Connection", "close")
         if location:
             self.send_header("Location", location)
         self.end_headers()
@@ -366,20 +375,36 @@ class Handler(BaseHTTPRequestHandler):
             "Go back and try again; details are in board-errors.log in the coordinator folder.")
         self._send(500, page_error(err))
 
+    def _post_error(self, status, text, length):
+        """Answer a POST with an error. The body is read first (up to MAX_BODY):
+        closing a socket with unread data makes Windows reset the connection, and
+        the client would see ConnectionResetError instead of the status."""
+        self.close_connection = True
+        left = min(max(length, 0), MAX_BODY)
+        try:
+            while left > 0:
+                chunk = self.rfile.read(min(left, 65536))
+                if not chunk:
+                    break
+                left -= len(chunk)
+        except OSError:
+            pass
+        self._plain(status, text)
+
     def do_POST(self):
-        if self.headers.get("Host") not in self._allowed():
-            return self._plain(403, "Forbidden host")
-        action = ACTIONS.get(urlsplit(self.path).path)
-        if action is None:
-            return self._plain(404, "Not found")
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
+        if self.headers.get("Host") not in self._allowed():
+            return self._post_error(403, "Forbidden host", length)
+        action = ACTIONS.get(urlsplit(self.path).path)
+        if action is None:
+            return self._post_error(404, "Not found", length)
         if length < 0:
-            return self._plain(400, "Bad Content-Length")
+            return self._post_error(400, "Bad Content-Length", length)
         if length > MAX_BODY:
-            return self._plain(413, "Too large")
+            return self._post_error(413, "Too large", length)
         form = parse_qs(self.rfile.read(length).decode("utf-8", "replace"),
                         keep_blank_values=True)
         conn = db.connect()

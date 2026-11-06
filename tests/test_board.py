@@ -309,6 +309,25 @@ class BoardTest(unittest.TestCase):
         self.assertIn(":root", body)
         self.assertEqual(self.get("/static/board.js")[0], 200)
 
+    def test_post_errors_drain_the_body(self):
+        # an error answer to a POST must read the body first, or the client
+        # may see ConnectionResetError instead of the status
+        big = {"text": "x" * 600_000}
+        for _ in range(5):
+            self.assertEqual(self.post("/a/nope", big)[0], 404)
+            self.assertEqual(self.post("/a/state", big, headers={
+                "Host": "evil.example"})[0], 403)
+
+    def test_html_responses_forbid_framing(self):
+        tid = self.task()
+        pages = [self.get("/"), self.get("/p/PA"), self.get(f"/t/{tid}"),
+                 self.get("/t/PA-999"),
+                 self.post("/a/state", {"id": tid, "state": "nope"})]
+        for status, _, h in pages:
+            self.assertIn("text/html", h["Content-Type"], status)
+            self.assertEqual(h["X-Frame-Options"], "DENY")
+            self.assertEqual(h["Content-Security-Policy"], "frame-ancestors 'none'")
+
     def test_no_external_resources(self):
         body = self.get("/")[1] + self.get("/p/PA")[1]
         self.assertNotIn("http://", body.replace("http://127.0.0.1", ""))
