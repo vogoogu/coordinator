@@ -105,9 +105,9 @@ def _tint(key: str) -> str:
 
 NEED_LOOK = {  # why -> (pill class, icon, label); the handover label is the state's own
     "stopped": ("red", "stopped", "Chat stopped"),
-    "lease": ("amb", "lease", "Lease ending"),
+    "lease": ("red", "lease", "Lease ending"),
     "handover": ("k-hand", "handover", ""),
-    "blocked": ("amb", "blocked", "Blocked"),
+    "blocked": ("red", "blocked", "Blocked"),
     "inbox": ("k-wait", "inbox", "New in inbox"),
 }
 ROLE_ICON = {"clarify": "question", "done": "eye"}
@@ -260,40 +260,43 @@ def _from(c: dict, now: datetime) -> str:
 
 
 # ------------------------------------------------------------------ project board
-CARD_WHY = {"stopped": ("red", "stopped", "Chat stopped"),
-            "lease": ("amb", "lease", "Lease ending"),
-            "handover": ("amb", "warn", "Needs you")}
+URGENT_LOOK = {"stopped": ("stopped", "Chat stopped"), "lease": ("lease", "Lease ending")}
+STALE_DAYS = 1   # a handover card waiting this many days shows its age in amber
 
 
 def _task_card(c: dict, modes: list, token: str, here: str, now: datetime) -> Raw:
+    """One card. Each fact appears once; the column already names the state."""
     final = c["kind"] in FINAL
-    if final:
-        cls, _, _ = _kind(c["kind"])
-        badge = _pill(f"{cls} tight", "ok" if c["kind"] == "finished" else "x-small",
-                      c["state_label"])
-    else:
-        badge = render("_mode_chip.html", icon=_mode_icon(c["mode"], modes), mode=c["mode"])
     metas = []
     if c["holder"]:
         metas.append(render("_meta.html", title=c["holder"], lead=render("_live.html"),
-                            text=f"chat {_short(c['holder'])} working · "
+                            text=f"Chat {_short(c['holder'])} working · "
                                  f"{_span(now - _when(c['holder_since']))}"))
-    if c["why"] in CARD_WHY:
-        metas.append(render("_meta_pill.html", pill=_pill(*CARD_WHY[c["why"]])))
-    if c["blocked"]:
+    if c["why"] in URGENT_LOOK and not final:
+        metas.append(render("_meta_pill.html", pill=_pill("red pw", *URGENT_LOOK[c["why"]])))
+    if c["blocked"] and not final:
         metas.append(render("_meta_pill.html",
-                            pill=_pill("amb wrap", "blocked", f"Blocked: {c['blocked']}")))
-    if c["open_points"] and not final:
-        metas.append(render("_meta.html", title="; ".join(c["open_points"]),
-                            lead=icon("list"),
-                            text=_plural(len(c["open_points"]), "open point")))
-    start = (render("_card_start.html", token_field=_token_field(token), id=c["id"],
-                    next=here, mode=c["mode"], icon_play=icon("play"))
-             if c["kind"] == "waiting" and not c["holder"] else "")
-    return render("_task_card.html", quiet="quiet" if final else "", id=c["id"],
-                  badge=badge, title=c["title"], metas=Raw("".join(metas)),
-                  age=_date(c["since"]) if final else _age(c["since"], now),
-                  start=start)
+                            pill=_pill("red pw", "blocked", f"Blocked: {c['blocked']}")))
+    if c.get("note") and c["kind"] == "handover":
+        metas.append(render("_card_note.html", text=c["note"],
+                            icon=icon("question" if c.get("note_kind") == "question"
+                                      else "comment", "sm")))
+    urgent = not final and (c["blocked"] or c["why"] in URGENT_LOOK)
+    if final:
+        top, foot = render("_card_date.html", date=_date(c["since"])), ""
+    else:
+        top = render("_mode_word.html", icon=_mode_icon(c["mode"], modes), mode=c["mode"])
+        age = _age(c["since"], now)
+        if c["kind"] == "handover" and (now.date() - _when(c["since"]).date()).days >= STALE_DAYS:
+            age = render("_stale.html", icon=icon("lease", "sm"), age=age,
+                         title=f"Waiting on you for {age}")
+        start = (render("_card_start.html", token_field=_token_field(token), id=c["id"],
+                        next=here, icon_play=icon("play"))
+                 if c["kind"] == "waiting" and not c["holder"] else "")
+        foot = render("_card_foot.html", age=age, start=start)
+    extra = (" quiet" if final else "") + (" urgent" if urgent else "")
+    return render("_task_card.html", extra=extra, id=c["id"], top=top, title=c["title"],
+                  metas=Raw("".join(metas)), foot=foot)
 
 
 def _column(col: dict, d: dict, here: str, older: bool, now: datetime) -> Raw:

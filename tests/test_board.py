@@ -233,7 +233,8 @@ class BoardTest(unittest.TestCase):
         self.assertIn("No tasks yet", self.get("/p/PB")[1])
         tid = self.task()
         body = self.get("/p/PA")[1]
-        self.assertIn("Start · read", body)
+        self.assertIn("Start<span class=\"vh\"> PA-1</span>", body)
+        self.assertNotIn("Start · ", body)
         with mock.patch("coordinator.launcher.start_chat") as start:
             status, _, h = self.post("/a/start", {"id": tid, "next": "/p/PA"})
         self.assertEqual((status, h["Location"]), (303, "/p/PA"))
@@ -387,14 +388,30 @@ class BoardTest(unittest.TestCase):
         self.assertEqual([i["id"] for i in items], [tid])
         self.assertIn("lease", items[0]["reasons"][0])
 
-    def test_card_shows_holder_blocked_and_open_points(self):
+    def test_card_shows_holder_and_blocked_once(self):
         tid = self.task()
         core.claim(self.conn, tid, "sess-9")
         core.set_blocked(self.conn, tid, PERSON, "waiting for key")
         core.set_open_points(self.conn, tid, PERSON, ["which db?"])
         body = self.get("/p/PA")[1]
-        for s in ("sess-9", "waiting for key", "which db?"):
-            self.assertIn(s, body)
+        self.assertIn("Chat sess working", body)
+        self.assertIn('<article class="tcard urgent">', body)       # red edge
+        self.assertIn('class="pill red pw"', body)
+        self.assertIn("Blocked: waiting for key", body)
+        self.assertNotIn("which db?", body)                         # on the task page only
+        self.assertEqual(body.count('<span class="idc">PA-1</span>'), 1)
+
+    def test_handover_card_shows_note_and_no_state_word(self):
+        tid = self.task()
+        core.claim(self.conn, tid, "sess-7")
+        core.release(self.conn, tid, "sess-7", "clarify", "Which database?")
+        body = self.get("/p/PA")[1]
+        card = body[body.index('<article class="tcard'):]
+        card = card[:card.index("</article>")]
+        self.assertIn('class="cnote" title="Which database?"', card)
+        self.assertNotIn("Needs you", card)
+        self.assertNotIn("class=\"pill", card)
+        self.assertIn('class="mode-w"', card)
 
     def test_task_page_actions_and_start_visibility(self):
         tid = self.task()

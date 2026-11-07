@@ -54,7 +54,8 @@ def _card(conn, task: dict, live: dict, cfg, kinds: dict, labels: dict, now) -> 
             "holder": claim["session_id"] if claim else "",
             "holder_since": claim["started"] if claim else "",
             "blocked": task["blocked"] or "", "open_points": task["open_points"],
-            "since": task["updated"], "why": need["why"] if need else ""}
+            "since": task["updated"], "why": need["why"] if need else "",
+            "note": (need or {}).get("note", ""), "note_kind": (need or {}).get("note_kind", "")}
 
 
 # Why a task needs the person, in the order the most urgent reason wins.
@@ -94,7 +95,9 @@ def _need(conn, t, kind, cfg, labels, claim, now) -> dict | None:
                         last_path=stat.get("last_path") or "")
         whys.add("handover")
         reasons.append(f"handover: {item['state_label']}")
-        item["note"] = full["comments"][-1]["text"] if full["comments"] else ""
+        last_comment = full["comments"][-1] if full["comments"] else {}
+        item["note"] = last_comment.get("text", "")
+        item["note_kind"] = last_comment.get("kind", "")
         if cfg and t["state"] == cfg.on_clarify:
             item["state_role"] = "clarify"
         elif cfg and t["state"] == cfg.on_done:
