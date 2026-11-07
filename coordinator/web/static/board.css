@@ -17,6 +17,7 @@
   --k-clo-bg:#F0F1F3;  --k-clo-t:#566170;
   --r-pill:999px; --r-card:14px; --r-box:10px; --r-sm:8px; --r-xs:6px; --r-tag:4px;
   --sh-hover:0 6px 18px rgba(3,23,43,.08); --sh-pop:0 12px 32px rgba(3,23,43,.14);
+  --zoom:.9; /* whole-UI scale on wide screens; 1 = design size */
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg)}
@@ -405,4 +406,10 @@ pre.errbox{margin:0;white-space:pre-wrap}
   .dl>.fl:first-child{border-top:0}
   .act .btn,.act select.inp{min-height:44px}
   .ev .hd .when{margin-left:0;flex-basis:100%}
+}
+
+/* Overall scale. Narrow screens stay at 1 so touch targets stay 44 px. */
+@media (min-width:641px){
+  .page{zoom:var(--zoom)}
+  .page{min-height:calc(100vh / var(--zoom))}
 }
