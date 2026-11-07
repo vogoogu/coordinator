@@ -105,10 +105,70 @@ class BoardTest(unittest.TestCase):
         self.assertIn(f'href="/t/{b}"', body)
         self.assertIn("Check me", body)
         self.assertIn("Unclear one", body)
-        self.assertIn("warn", body)  # enforcement default
+        self.assertIn("2 things need you", body)
         data = self.get_json("/api/index")
         self.assertEqual({p["key"] for p in data["projects"]}, {"PA", "PB"})
         self.assertEqual({i["id"] for i in data["needs_you"]}, {a, b})
+
+    def test_index_cards_sorted_red_amber_green(self):
+        self.make_project("third", "PC")
+        a = self.task("PA", "Check me")
+        core.set_state(self.conn, a, "review", PERSON, note="x")      # PA amber
+        b = self.task("PB", "Lost chat")
+        core.claim(self.conn, b, "sess-gone")
+        core.expire_leases(self.conn, now=datetime.now(timezone.utc)
+                           + timedelta(hours=5))                     # PB red
+        body = self.get("/")[1]
+        pos = [body.index(f'id="pc-{k}"') for k in ("PB", "PA", "PC")]
+        self.assertEqual(pos, sorted(pos))
+        self.assertIn("h-red", body)
+        self.assertIn("Act now", body)
+        self.assertIn("Chat stopped", body)
+        self.assertIn("Nothing needs you", body)                       # PC is quiet
+        tones = {p["key"]: p["tone"] for p in self.get_json("/api/index")["projects"]}
+        self.assertEqual(tones, {"PA": "amber", "PB": "red", "PC": "green"})
+
+    def test_stopped_chat_shows_last_activity(self):
+        tid = self.task()
+        core.claim(self.conn, tid, "abcd-1234")
+        core.touch(self.conn, "abcd-1234", "Write", "C:/x/notes.md")
+        core.stop_without_report(self.conn, "abcd-1234", "no report")
+        item = self.get_json("/api/index")["needs_you"][0]
+        self.assertEqual((item["why"], item["tone"]), ("stopped", "red"))
+        body = self.get("/")[1]
+        self.assertIn("Write notes.md", body)
+        self.assertIn("Last activity", body)
+
+    def test_index_shows_at_most_five_rows_per_project(self):
+        for n in range(7):
+            core.set_blocked(self.conn, self.task(title=f"T{n}"), PERSON, "wait")
+        body = self.get("/")[1]
+        self.assertEqual(body.count('class="irow"'), 5)
+        self.assertIn("2 more on the board", body)
+        self.assertIn("7 things need you", body)
+
+    def test_monogram_and_tint(self):
+        self.assertEqual(board.monogram("Name PA"), "NP")
+        self.assertEqual(board.monogram("Skill"), "SK")
+        self.assertEqual(board.monogram("--"), "?")
+        body = self.get("/")[1]
+        self.assertRegex(body, r'class="mark m[1-5]" aria-hidden="true">NP<')
+
+    def test_pin_from_index_returns_to_index(self):
+        tid = self.task()
+        self.conn.execute("UPDATE task SET inbox = 1")
+        body = self.get("/")[1]
+        self.assertIn('action="/a/pin"', body)
+        status, _, h = self.post("/a/pin", {"id": tid, "next": "/"})
+        self.assertEqual((status, h["Location"]), (303, "/"))
+        self.conn.execute("UPDATE task SET inbox = 1")
+        status, _, h = self.post("/a/pin", {"id": tid, "next": "//evil.example/"})
+        self.assertEqual(h.get("Location"), f"/t/{tid}")
+
+    def test_index_quiet_and_empty(self):
+        self.assertIn("All 2 projects are quiet.", self.get("/")[1])
+        self.conn.execute("DELETE FROM project")  # test-only: the app never deletes rows
+        self.assertIn("No projects yet", self.get("/")[1])
 
     def test_project_board_columns_follow_config(self):
         self.task("PA")

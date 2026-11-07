@@ -770,6 +770,13 @@ def live_claims(conn) -> dict:
     return {r["display_id"]: dict(r) for r in _live_claim_rows(conn)}
 
 
+def get_session_stat(conn, session_id: str) -> dict | None:
+    """What a chat session last did (tool, path, time); None if it never did anything."""
+    row = conn.execute("SELECT * FROM session_stat WHERE session_id = ?",
+                       (session_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def board_token(conn) -> str:
     """The board's POST token; created on first use and kept in the settings."""
     with transaction(conn):

@@ -18,6 +18,7 @@ from . import config, core, db, launcher, messages, paths
 WEB_DIR = Path(__file__).parent / "web"
 TEMPLATE_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
+ICON_DIR = WEB_DIR / "icons"
 KINDS = config.KINDS
 SOON = timedelta(minutes=30)
 MAX_BODY = 1_000_000
@@ -76,34 +77,97 @@ def _card(task: dict, live: dict) -> dict:
             "blocked": task["blocked"] or "", "open_points": task["open_points"]}
 
 
+# Why a task needs the person, in the order the most urgent reason wins.
+# "red" reasons make the whole project card red ("act now"); the rest amber.
+WHY_ORDER = ("stopped", "lease", "handover", "blocked", "inbox")
+URGENT = {"stopped", "lease"}
+STOPPED_REASONS = {"expired", "no_report"}   # claim end reasons: chat left without a report
+TONE_ORDER = {"red": 0, "amber": 1, "green": 2}
+
+
+def _config_and_error(project: dict):
+    try:
+        return config.load_project(project["root"]), ""
+    except config.ConfigError as e:
+        return None, str(e)
+
+
+def _need(conn, t, kind, cfg, labels, claim, now) -> dict | None:
+    """The "Needs you" entry for one task, or None. `why` is the most urgent reason;
+    the facts after it are what the index shows in the item's detail line."""
+    reasons, whys = [], set()
+    item = {"id": t["id"], "title": t["title"], "project": t["project"],
+            "since": t["updated"], "state": t["state"],
+            "state_label": labels.get(t["state"], t["state"]), "state_role": "",
+            "inbox": t["inbox"]}
+    if kind == "handover":
+        full = core.get_task(conn, t["id"])
+        ended = [c for c in full["claims"] if c["ended"]]
+        last = ended[-1] if ended else None
+        if claim is None and last and last["end_reason"] in STOPPED_REASONS:
+            whys.add("stopped")
+            reasons.append("chat stopped without report")
+            stat = core.get_session_stat(conn, last["session_id"]) or {}
+            item.update(session=last["session_id"],
+                        last_activity=stat.get("last_activity") or "",
+                        last_tool=stat.get("last_tool") or "",
+                        last_path=stat.get("last_path") or "")
+        whys.add("handover")
+        reasons.append(f"handover: {item['state_label']}")
+        item["note"] = full["comments"][-1]["text"] if full["comments"] else ""
+        if cfg and t["state"] == cfg.on_clarify:
+            item["state_role"] = "clarify"
+        elif cfg and t["state"] == cfg.on_done:
+            item["state_role"] = "done"
+    if t["blocked"]:
+        whys.add("blocked")
+        reasons.append(f"blocked: {t['blocked']}")
+        item["blocked"] = t["blocked"]
+    if t["inbox"]:
+        whys.add("inbox")
+        reasons.append("inbox: new task from a chat")
+        item.update(created=t["created"], created_by_type=t["created_by_type"],
+                    created_by_id=t["created_by_id"])
+    if claim and _lease_end(claim) - now < SOON:
+        whys.add("lease")
+        reasons.append(f"lease ends {_lease_end(claim).isoformat(timespec='seconds')}")
+        item.update(session=claim["session_id"], last_seen=claim["last_seen"],
+                    lease_end=_lease_end(claim).isoformat(timespec="seconds"))
+    if not whys:
+        return None
+    why = next(w for w in WHY_ORDER if w in whys)
+    return {**item, "why": why, "tone": "red" if why in URGENT else "amber",
+            "reasons": reasons}
+
+
 def api_index(conn) -> dict:
     live = core.live_claims(conn)
     now = datetime.now(timezone.utc)
     projects, needs = [], []
     for p in core.list_projects(conn):
-        cfg = _config(p)
+        cfg, cfg_error = _config_and_error(p)
         kinds = _kinds(cfg)
         labels = {s.name: s.label for s in cfg.states} if cfg else {}
         counts = dict.fromkeys(KINDS, 0)
+        items = []
         for t in core.list_tasks(conn, p["key"]):
             kind = kinds.get(t["state"], "unknown")
             counts[kind] = counts.get(kind, 0) + 1
-            reasons = []
-            if kind == "handover":
-                reasons.append(f"handover: {labels.get(t['state'], t['state'])}")
-            if t["blocked"]:
-                reasons.append(f"blocked: {t['blocked']}")
-            if t["inbox"]:
-                reasons.append("inbox: new task from a chat")
-            claim = live.get(t["id"])
-            if claim and _lease_end(claim) - now < SOON:
-                reasons.append(f"lease ends {_lease_end(claim).isoformat(timespec='seconds')}")
-            if reasons:
-                needs.append({"id": t["id"], "title": t["title"], "project": p["key"],
-                              "reasons": reasons})
+            item = _need(conn, t, kind, cfg, labels, live.get(t["id"]), now)
+            if item:
+                items.append(item)
+        items.sort(key=lambda i: (TONE_ORDER[i["tone"]], i["since"]))
+        needs.extend(items)
+        tone = ("red" if any(i["tone"] == "red" for i in items)
+                else "amber" if items or cfg_error else "green")
+        chats = sum(1 for tid in live if tid.rsplit("-", 1)[0].upper() == p["key"].upper())
         projects.append({"key": p["key"], "name": p["name"], "counts": counts,
                          "counts_text": ", ".join(f"{k} {n}" for k, n in counts.items()
-                                                  if n)})
+                                                  if n),
+                         "tone": tone, "needs_count": len(items), "chats": chats,
+                         "config_error": cfg_error})
+    projects.sort(key=lambda p: (TONE_ORDER[p["tone"]], -p["needs_count"],
+                                 (p["name"] or p["key"]).lower()))
     return {"token": core.board_token(conn),
             "enforcement": core.get_setting(conn, "enforcement", "warn"),
             "projects": projects, "needs_you": needs}
@@ -175,14 +239,160 @@ def _cards(cards) -> Raw:
         for c in cards])
 
 
+def icon(name: str, size: str = "sm") -> Raw:
+    """Inline stroke icon from web/icons (decorative: the words next to it carry the meaning)."""
+    shape = (ICON_DIR / f"{name}.svg").read_text(encoding="utf-8").strip()
+    cls = f"ic {size}".strip()
+    return Raw(f'<svg class="{cls}" viewBox="0 0 24 24" aria-hidden="true">{shape}</svg>')
+
+
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+INDEX_ROWS = 5            # "Needs you" rows per project card; the rest are on the board
+TINTS = 5                 # monogram tints m1..m5 in board.css
+
+
+def _when(stamp: str) -> datetime:
+    return datetime.fromisoformat(stamp).astimezone()
+
+
+def _span(delta: timedelta) -> str:
+    """A length of time in words: 12 min, 3 h, 1 day, 9 days."""
+    mins = max(int(delta.total_seconds() // 60), 0)
+    if mins < 60:
+        return f"{max(mins, 1)} min"
+    if mins < 24 * 60:
+        return f"{mins // 60} h"
+    days = mins // (24 * 60)
+    return "1 day" if days == 1 else f"{days} days"
+
+
+def _ago(stamp: str, now: datetime) -> str:
+    delta = now - _when(stamp)
+    if delta < timedelta(minutes=1):
+        return "just now"
+    if delta < timedelta(days=1):
+        return f"{_span(delta)} ago"
+    return "yesterday" if delta < timedelta(days=2) else f"{_span(delta)} ago"
+
+
+def _age(stamp: str, now: datetime) -> str:
+    """How long an item has waited, by calendar day: today, 1 day, 6 days."""
+    days = (now.date() - _when(stamp).date()).days
+    return "today" if days <= 0 else ("1 day" if days == 1 else f"{days} days")
+
+
+def _short(session_id: str) -> str:
+    return (session_id or "")[:4]
+
+
+def monogram(name: str) -> str:
+    """Two-letter mark until projects have logos: initials of the first two words,
+    or the first two letters of a one-word name."""
+    words = re.findall(r"[^\W_]+", name)
+    if len(words) >= 2:
+        return (words[0][0] + words[1][0]).upper()
+    return (words[0][:2] if words else "?").upper()
+
+
+def _tint(key: str) -> str:
+    return f"m{sum(map(ord, key.upper())) % TINTS + 1}"
+
+
+NEED_LOOK = {  # why -> (pill class, icon, label); the handover label is the state's own
+    "stopped": ("red", "stopped", "Chat stopped"),
+    "lease": ("amb", "lease", "Lease ending"),
+    "handover": ("k-hand", "handover", ""),
+    "blocked": ("amb", "blocked", "Blocked"),
+    "inbox": ("k-wait", "inbox", "New in inbox"),
+}
+ROLE_ICON = {"clarify": "question", "done": "eye"}
+PROJECT_LOOK = {"red": ("red", "act-now", "Act now"), "amber": ("amb", "check-tri", "Check"),
+                "green": ("grn", "ok", "OK")}
+
+
+def _need_detail(i: dict, now: datetime) -> str:
+    why = i["why"]
+    if why == "lease":
+        silent = _span(now - _when(i["last_seen"]))
+        left = _when(i["lease_end"]) - now
+        end = f"Lease ends in {_span(left)}." if left > timedelta(0) else "Lease has run out."
+        return f"Chat {_short(i['session'])} silent for {silent}. {end}"
+    if why == "stopped":
+        if i["last_activity"]:
+            what = " ".join(x for x in (i["last_tool"], Path(i["last_path"]).name
+                                        if i["last_path"] else "") if x)
+            return (f"Last activity {_ago(i['last_activity'], now)}"
+                    + (f": {what}" if what else ""))
+        return f"Chat {_short(i['session'])} stopped without a report."
+    if why == "handover":
+        return i["note"] or f"Waiting in {i['state_label']}."
+    if why == "blocked":
+        return i["blocked"]
+    who = (f"chat {_short(i['created_by_id'])}" if i["created_by_type"] == "chat"
+           else i["created_by_id"])
+    return f"From {who}, {_ago(i['created'], now)}"
+
+
+def _need_row(i: dict, token: str, now: datetime) -> Raw:
+    pill, icon_name, label = NEED_LOOK[i["why"]]
+    if i["why"] == "handover":
+        icon_name, label = ROLE_ICON.get(i["state_role"], icon_name), i["state_label"]
+    pin = (render("_pin_button.html", id=i["id"], token_field=_token_field(token),
+                  icon_pin=icon("pin")) if i["inbox"] else "")
+    return render("_need_row.html", tone=pill, icon=icon(icon_name), label=label,
+                  age=_age(i["since"], now), pin=pin, id=i["id"], title=i["title"],
+                  detail=_need_detail(i, now))
+
+
+def _project_card(p: dict, items: list, token: str, now: datetime) -> Raw:
+    tone, status_icon, status = PROJECT_LOOK[p["tone"]]
+    rows = [_need_row(i, token, now) for i in items[:INDEX_ROWS]]
+    if len(items) > INDEX_ROWS:
+        rows.append(render("_card_more.html", key=p["key"],
+                           text=f"{len(items) - INDEX_ROWS} more on the board"))
+    if p["config_error"]:
+        rows.insert(0, render("_card_config_error.html", icon=icon("config-error", ""),
+                              error=p["config_error"]))
+    body = (Raw("<div>" + "".join(rows) + "</div>") if rows
+            else render("_card_quiet.html", icon=icon("circle-check", "")))
+    n = p["chats"]
+    chats = render("_chats.html", muted="" if n else "muted",
+                   live=Raw('<span class="live" aria-hidden="true"></span>' if n else ""),
+                   text=f"{n} chat{'s' if n != 1 else ''} working" if n
+                   else "No chat working")
+    count = p["needs_count"]
+    return render("_project_card.html", tone=f"{tone}", key=p["key"],
+                  name=p["name"] or p["key"], monogram=monogram(p["name"] or p["key"]),
+                  tint=_tint(p["key"]), status_icon=icon(status_icon), status=status,
+                  count=count, count_class="" if count else "zero",
+                  count_word="needs you" if count == 1 else "need you",
+                  body=body, chats=chats, icon_chevron=icon("chevron-right"))
+
+
 def page_index(d) -> Raw:
-    rows = [{"key": p["key"], "name": p["name"], "counts": p["counts_text"]}
-            for p in d["projects"]]
-    needs = [{"id": i["id"], "title": i["title"], "reasons": "; ".join(i["reasons"])}
-             for i in d["needs_you"]]
-    return _page("index.html", "Coordinator", d["token"], enforcement=d["enforcement"],
-                 projects=render_all("_project_row.html", rows),
-                 needs=render_all("_needs_item.html", needs))
+    now = datetime.now().astimezone()
+    projects, needs = d["projects"], d["needs_you"]
+    by_project = {}
+    for i in needs:
+        by_project.setdefault(i["project"], []).append(i)
+    cards = Raw("".join(_project_card(p, by_project.get(p["key"], []), d["token"], now)
+                        for p in projects))
+    total, n = len(needs), len(projects)
+    if not projects:
+        summary = render("_index_empty.html", icon=icon("folder", "lg"))
+    elif not total:
+        quiet = "Your project is quiet." if n == 1 else f"All {n} projects are quiet."
+        summary = render("_index_quiet.html", icon=icon("circle-check", "lg"), text=quiet)
+    else:
+        busy = sum(1 for p in projects if p["needs_count"])
+        summary = render("_index_heading.html",
+                         headline="1 thing needs you" if total == 1
+                         else f"{total} things need you",
+                         where=f"in {busy} of {n} project{'s' if n != 1 else ''}")
+    return _page("index.html", "Coordinator", d["token"],
+                 date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
+                 updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),
+                 summary=summary, cards=cards)
 
 
 def page_project(d) -> Raw:
@@ -222,6 +432,12 @@ def page_error(error, back="/") -> Raw:
 # ------------------------------------------------------------------ actions
 def _f(form, name) -> str:
     return form.get(name, [""])[0]
+
+
+def _next(form) -> str:
+    """Where to go after an action: a local path from the form, or "" for the task page."""
+    nxt = _f(form, "next")
+    return nxt if re.fullmatch(r"/[A-Za-z0-9/_.-]*", nxt) and not nxt.startswith("//") else ""
 
 
 def _ensure_startable(conn, display_id):
@@ -418,7 +634,7 @@ class Handler(BaseHTTPRequestHandler):
             except messages.CoordinatorError as e:
                 back = f"/t/{_f(form, 'id')}" if _f(form, "id") else "/"
                 return self._send(400, page_error(e, back))
-            self._send(303, "", location=f"/t/{tid}")
+            self._send(303, "", location=_next(form) or f"/t/{tid}")
         except Exception:
             self._internal_error()
         finally:
