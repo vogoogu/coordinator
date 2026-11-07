@@ -151,6 +151,13 @@ def bad_open_points(detail):
         "Pass a list of strings.")
 
 
+def windows_only(what):
+    return CoordinatorError(
+        f"{what} only works on Windows.",
+        "The pop-up branding is a Windows registry entry.",
+        "Run it on the Windows laptop.")
+
+
 def person_only(what):
     return CoordinatorError(
         f"{what} was not done.",

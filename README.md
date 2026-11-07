@@ -54,7 +54,8 @@ task only gets a notice. With `block` the edit is refused. Start with `warn`:
 
 - `coordinator.db` - all tasks, comments, claims and history (nothing is deleted)
 - `backups\` - one copy per day, the newest 14 are kept
-- `hook-errors.log` and `board-errors.log` - problems that were caught
+- `hook-errors.log`, `board-errors.log` and `notify-errors.log` - problems that were caught
+- `notify.toml` - pop-up settings (optional, see Notifications)
   (if that folder is unusable, hook errors go to `%TEMP%\coordinator-hook-errors.log`)
 
 ## How a chat works with a task
@@ -64,6 +65,39 @@ Press the Start button on a task in the board. It opens a chat with a packet
 by releasing the task with one of three outcomes: `done` (hand over for review),
 `clarify` (needs an answer) or `progress` (partial result). Only a person can set
 a task to finished or closed.
+
+## Notifications
+
+A Windows pop-up with a sound appears when a chat:
+
+- finishes a task: it lands in "To check" (green tick, "KMU-14 is ready to check")
+- needs you: it lands in "Needs clarification", or the chat stopped without a
+  report (amber question mark, "KMU-9 needs you")
+
+Moves you make yourself on the board or command line give no pop-up. If several
+tasks need you at the same moment (for example after a night), one pop-up says
+"3 tasks need you". "Open task" opens the task in the board; if the board is
+not running, it is started in the background first.
+
+Once, so the pop-up header says "Coordinator" instead of "Windows PowerShell":
+
+    python -m coordinator install-notify
+
+This writes one entry under your user in the registry
+(`HKCU\Software\Classes\AppUserModelId\Coordinator.Board`). Undo it with
+`python -m coordinator uninstall-notify`.
+
+Settings in `%LOCALAPPDATA%\coordinator\notify.toml` (all optional):
+
+    enabled = true        # pop-ups on/off
+    sound = true          # sound on/off
+    sound_finished = ""   # your own .wav, empty = Windows sound
+    sound_needs_you = ""
+    board_port = 8790
+
+Known limits: a chat window that crashes or is closed without its stop hook is
+noticed only after 4 hours, and only when the board is used or a chat starts.
+With Windows "Do not disturb" on, the pop-up waits but the sound still plays.
 
 ## Run the tests
 

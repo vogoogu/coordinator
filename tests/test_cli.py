@@ -174,6 +174,36 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertIn("PX-1", out)
 
+    def test_install_notify(self):
+        from coordinator import toast
+        with mock.patch.object(toast, "winreg") as reg, \
+                mock.patch.object(cli.sys, "platform", "win32"):
+            code, out, err = self.run_cli("install-notify")
+        self.assertEqual(code, 0, err)
+        reg.CreateKey.assert_called_once_with(reg.HKEY_CURRENT_USER, toast.REG_PATH)
+        self.assertEqual(out.strip(), 'Pop-ups will show as "Coordinator". '
+                                      "Undo with: coordinator uninstall-notify")
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "home", "coordinator.db")))
+
+    def test_uninstall_notify(self):
+        from coordinator import toast
+        with mock.patch.object(toast, "winreg") as reg, \
+                mock.patch.object(cli.sys, "platform", "win32"):
+            code, out, _ = self.run_cli("uninstall-notify")
+            self.assertEqual((code, out.strip()),
+                             (0, 'Removed. Pop-ups will show as "Windows PowerShell".'))
+            reg.DeleteKey.side_effect = FileNotFoundError
+            code, out, _ = self.run_cli("uninstall-notify")
+            self.assertEqual((code, out.strip()), (0, "Nothing to remove."))
+
+    def test_install_notify_not_windows(self):
+        with mock.patch.object(cli.sys, "platform", "linux"):
+            code, out, err = self.run_cli("install-notify")
+        self.assertEqual(code, 1)
+        self.assertIn("WHAT:", err)
+        self.assertIn("WHY:", err)
+        self.assertIn("FIX:", err)
+
     def test_expire_command_notifies(self):
         self.init()
         self.run_cli("create", "PX", "T")

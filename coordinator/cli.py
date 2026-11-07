@@ -193,6 +193,26 @@ def install_help_text() -> str:
         "This command applies nothing; review the text and apply it by hand.\n")
 
 
+def cmd_install_notify(args, conn):
+    if sys.platform != "win32":
+        raise messages.windows_only("install-notify")
+    from . import toast
+    toast.register()
+    print('Pop-ups will show as "Coordinator". Undo with: coordinator uninstall-notify')
+    return 0
+
+
+def cmd_uninstall_notify(args, conn):
+    if sys.platform != "win32":
+        raise messages.windows_only("uninstall-notify")
+    from . import toast
+    if toast.unregister():
+        print('Removed. Pop-ups will show as "Windows PowerShell".')
+    else:
+        print("Nothing to remove.")
+    return 0
+
+
 def cmd_install_help(args, conn):
     print(install_help_text(), end="")
     return 0
@@ -247,6 +267,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--port", type=int, default=8790)
     sp.add_argument("--no-browser", action="store_true")
     add("install-help", cmd_install_help, "print hook JSON and MCP command")
+    add("install-notify", cmd_install_notify, "show pop-ups as Coordinator")
+    add("uninstall-notify", cmd_uninstall_notify, "undo install-notify")
     return p
 
 
@@ -263,7 +285,7 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     conn = None
     try:
-        if args.fn is cmd_install_help:
+        if args.fn in (cmd_install_help, cmd_install_notify, cmd_uninstall_notify):
             return args.fn(args, None)
         conn = db.connect()
         return args.fn(args, conn)
