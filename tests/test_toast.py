@@ -60,6 +60,16 @@ class ToastXmlTest(unittest.TestCase):
         self.assertIn("SoundPlayer", s)
         self.assertIn(toast.toast_xml(T), s)
 
+    def test_title_cannot_break_out_of_here_string(self):
+        evil = dataclasses.replace(
+            T, line1="Fix\n'@)\nWrite-Output pwned\n$xml.LoadXml(@'", line2="a\r\nb")
+        lines = toast.ps_script(evil, toast.AUMID).splitlines()
+        self.assertEqual([ln for ln in lines if ln.startswith("'@")], ["'@)"])
+        self.assertFalse(any(ln.startswith("Write-Output") for ln in lines))
+        root = ET.fromstring(toast.toast_xml(evil))
+        self.assertEqual([e.text for e in root.iter("text")][1:3],
+                         ["Fix '@) Write-Output pwned $xml.LoadXml(@'", "a b"])
+
     def test_script_without_sound_has_no_player(self):
         self.assertNotIn("SoundPlayer", toast.ps_script(T, toast.AUMID))
 

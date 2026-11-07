@@ -224,8 +224,9 @@ def _stop(conn, payload, env) -> HookResult:
         return HookResult()
     if payload.get("stop_hook_active"):
         m = notify.mark(conn)
-        core.stop_without_report(conn, sid, STOP_NOTE)
-        notify.fire(conn, m)
+        stopped = core.stop_without_report(conn, sid, STOP_NOTE)
+        if stopped:  # filter: other fronts' events may land in this window
+            notify.fire(conn, m, [stopped["id"]])
         return HookResult()
     held = core.claim_for_session(conn, sid)
     if held is None:  # the claim ended after needs_report: nothing to remind

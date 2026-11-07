@@ -41,7 +41,9 @@ class Toast:
 
 
 def _x(text: str) -> str:
-    return escape(str(text), {'"': "&quot;"})
+    """XML-escape on one line: line breaks become spaces and ' becomes &apos;, so
+    no text can end the PowerShell here-string the XML sits in ('@ at line start)."""
+    return escape(" ".join(str(text).split()), {'"': "&quot;", "'": "&apos;"})
 
 
 def toast_xml(t: Toast) -> str:
