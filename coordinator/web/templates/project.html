@@ -1,17 +1,25 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>$title</title>
-<link rel="stylesheet" href="/static/legacy.css"><script src="/static/board.js" defer></script></head>
-<body><header><a href="/">Coordinator</a></header><main>
-<h1>$key $name</h1>
-<section class="inbox"><h2>Inbox</h2>$inbox</section>
-<div class="board">$columns</div>
-<h2>New task</h2>
-<form method="post" action="/a/create">$token_field
-  <input type="hidden" name="project" value="$key">
-  <label>Title <input name="title" required></label>
-  <label>Goal <textarea name="goal"></textarea></label>
-  <label>Done when <textarea name="done_when"></textarea></label>
-  <label>Scope <textarea name="scope"></textarea></label>
-  <button type="submit">Create</button>
-</form>
-</main></body></html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$title</title>
+<link rel="stylesheet" href="/static/board.css"><script src="/static/board.js" defer></script></head>
+<body><div class="page">
+<header class="top">
+  <a class="back" href="/">$icon_back<span class="lbl">All projects</span></a>
+  <span class="vsep"></span>
+  <h1 class="ptitle"><span class="mark s $tint" aria-hidden="true">$monogram</span>$name</h1>
+  <div class="grow"></div>
+  <span class="upd">Updated $updated</span>
+  <a class="btn" href="$here">$icon_refresh<span class="lbl">Refresh</span></a>
+  <a class="btn primary wide-only" href="#new-task" data-dialog="new-task">$icon_plus New task</a>
+</header>
+<div class="narrow-only new-bar"><a class="btn primary wide" href="#new-task" data-dialog="new-task">$icon_plus New task</a></div>
+$notice
+$inbox
+<main class="boardwrap">
+<h2 class="vh">Task columns</h2>
+<div class="board" tabindex="0" aria-label="Task columns. Scroll sideways for more.">$columns</div>
+<div class="fade" aria-hidden="true"></div>
+</main>
+$dialog
+</div></body></html>

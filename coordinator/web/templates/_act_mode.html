@@ -1,0 +1,11 @@
+<div class="act">
+  <span class="lab" id="mode-lab">Mode</span>
+  <div class="row-f" role="group" aria-labelledby="mode-lab">
+    <form method="post" action="/a/mode">$token_field<input type="hidden" name="id" value="$id"><input type="hidden" name="mode" value="$lower">
+      <button class="btn sm" type="submit"$lower_off>$icon_down Lower<span class="vh"> to $lower</span></button></form>
+    <span class="mode lg">$mode_icon$mode</span>
+    <form method="post" action="/a/mode">$token_field<input type="hidden" name="id" value="$id"><input type="hidden" name="mode" value="$higher">
+      <button class="btn sm" type="submit"$higher_off>$icon_up Raise<span class="vh"> to $higher</span></button></form>
+  </div>
+  $error
+</div>

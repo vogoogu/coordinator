@@ -1,0 +1,8 @@
+<form class="act" method="post" action="/a/state">$token_field<input type="hidden" name="id" value="$id">
+  <label class="lab" for="st">Change state</label>
+  <div class="row-f"><select id="st" name="state" class="inp" data-note-for="st-note">$state_options</select><button class="btn" type="submit">Apply</button></div>
+  <label class="flab" for="st-note" data-note-label>Note <i data-note-req hidden>required</i></label>
+  <textarea id="st-note" name="note" class="inp" rows="2" placeholder="Why, or what the next person should know"></textarea>
+  <span class="help">$help</span>
+  $error
+</form>

@@ -284,3 +284,125 @@ a.brand:hover{color:var(--link)}
   .pc-f a{min-height:44px}
 }
 @media (min-width:641px){.date-line{display:none}}
+
+/* shared: header and helpers */
+.page h1.ptitle{font-size:18px}
+.pill.tight{padding:0 8px}
+.pill.wrap{white-space:normal}
+.row-f{display:flex;gap:8px;align-items:center}
+.row-f.end{justify-content:flex-end}
+.page form{margin:0}
+.inp.narrow{width:auto}
+.push{margin-left:auto}
+.page-note{margin:20px 32px 0}
+.inline-err{align-items:flex-start;white-space:pre-line;line-height:1.45}
+.inline-err .ic{margin-top:2px}
+.empty .empty-t{font-size:15px;font-weight:650;color:var(--ink)}
+.empty.small{margin:10px 0 16px;padding:20px}
+.board-empty{margin:4px 32px 24px 0}
+details>summary{list-style:none}
+details>summary::-webkit-details-marker{display:none}
+.fold-ic{display:inline-flex;color:var(--muted);transition:transform .15s}
+details[open]>summary .fold-ic{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.fold-ic{transition:none}}
+
+/* project board: columns are <details> so they can fold on narrow screens */
+.board:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.col summary{cursor:default}
+.col-b{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.col-b:empty{display:none}
+.tcard .foot{flex-wrap:wrap}
+.tcard .card-start{display:inline-flex}
+.inbox-h{cursor:pointer;width:100%}
+.inbox-help{font-weight:400;font-size:12.5px}
+.inbox-t{flex:1;min-width:0}
+.inbox-i .tt{display:block}
+.inbox-i .tt:hover{color:var(--link)}
+.inbox-i .tt .id{font-family:var(--mono);font-size:12px;font-weight:400;color:var(--muted)}
+
+/* new task dialog: a real <dialog>; without JS it opens through #new-task */
+dialog.dlg{position:fixed;inset:56px 0 auto 0;margin:0 auto;transform:none;border:0;color:var(--ink);max-height:calc(100vh - 80px);overflow:auto}
+dialog.dlg:not([open]){display:none}
+dialog.dlg:target:not([open]){display:block;z-index:10;box-shadow:var(--sh-pop),0 0 0 100vmax rgba(3,23,43,.32)}
+dialog.dlg::backdrop{background:rgba(3,23,43,.32)}
+.dlg form{display:flex;flex-direction:column;gap:18px}
+.dlg-top{display:flex;align-items:center;gap:12px}
+.dlg-top h2{flex:1}
+.ibtn.xs{width:36px;height:36px;border-radius:var(--r-sm);border-color:transparent;color:var(--sec)}
+.ibtn.xs:hover{background:var(--sub)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+fieldset.bare{border:0;margin:0;padding:0;min-width:0}
+fieldset.bare legend{padding:0}
+.seg label{display:inline-flex;cursor:pointer}
+.seg input{position:absolute;opacity:0;width:1px;height:1px}
+.seg span{height:32px;padding:0 14px;border-radius:var(--r-sm);font-weight:600;font-size:13px;color:var(--sec);display:inline-flex;align-items:center;gap:6px}
+.seg input:checked+span{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(3,23,43,.14)}
+.seg input:focus-visible+span{outline:2px solid var(--link);outline-offset:2px}
+.dlg-acts{display:flex;justify-content:flex-end;gap:10px;padding-top:4px}
+
+/* task page */
+.t-head{display:flex;flex-direction:column;gap:14px}
+.t-title{display:flex;flex-direction:column;gap:8px}
+.t-title .mono{font-size:13px}
+.t-title h1{font-size:28px;font-weight:700;letter-spacing:-.01em;line-height:1.25;overflow-wrap:anywhere}
+.t-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.t-meta>.muted{font-size:13px}
+.t-meta .vsep{height:16px}
+.mode.lg{font-size:13px;padding:3px 10px}
+.row-f .mode.lg{height:34px;padding:0 12px}
+.t-live{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--sec)}
+.panel-h .nf{font-size:12.5px;margin-left:auto}
+.panel-h+.act{border-top:0}
+.chatrow .sid{font-weight:600;font-size:13px}
+.path .btn{flex:none}
+.ev .box{white-space:pre-line}
+.fv{overflow-wrap:anywhere}
+
+/* error page */
+.err-card{padding:22px;display:flex;flex-direction:column;gap:14px;max-width:760px}
+.err-h{display:flex;align-items:center;gap:8px;font-size:18px;font-weight:650;color:var(--red-t)}
+pre.errbox{margin:0;white-space:pre-wrap}
+
+@media (min-width:641px){
+  .narrow-only{display:none}
+  .col .fold-ic{display:none}
+}
+@media (max-width:640px){
+  .wide-only{display:none}
+  .top .vsep{display:none}
+  .top .back{width:44px;height:44px;justify-content:center;border:1px solid var(--line-strong);border-radius:var(--r-box);background:var(--surface)}
+  .top .back .lbl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .new-bar{padding:12px 16px 0}
+  .new-bar .btn{height:44px}
+  .page-note{margin:12px 16px 0}
+  .inbox{margin:12px 16px 0}
+  .inbox-help{display:none}
+  .inbox-b{grid-template-columns:1fr;padding:0 12px 12px}
+  .inbox-i{flex-wrap:wrap}
+  .inbox-t{flex-basis:100%}
+  .inbox-i .btn{flex:1;height:44px}
+  .boardwrap{padding:12px 16px 24px}
+  .board{flex-direction:column;overflow:visible;padding:0;gap:12px}
+  .board-empty{margin:0}
+  .col{width:auto;padding:0;background:var(--surface);border:1px solid var(--line);overflow:hidden}
+  .col summary{cursor:pointer;min-height:52px;padding:8px 14px}
+  .col-b{margin:0;padding:12px;background:rgba(3,23,43,.04)}
+  .fade{display:none}
+  .tcard .ttl{font-size:15px}
+  .tcard .card-start{flex-basis:100%}
+  .tcard .card-start .btn{width:100%;height:44px;font-size:13px}
+  .more{min-height:44px;display:flex;align-items:center}
+  .two{grid-template-columns:1fr}
+  dialog.dlg{inset:16px 0 auto 0;max-height:calc(100vh - 32px)}
+  .tgrid{display:flex;flex-direction:column;gap:16px}
+  .tcol{display:contents}
+  .p-actions{order:1}.p-details{order:2}.p-timeline{order:3}.p-chats{order:4}
+  .t-title h1{font-size:22px}
+  .panel{padding:4px 16px 8px}
+  .dl{grid-template-columns:minmax(0,1fr)}
+  .dl>*{border-top:0;padding:2px 0 12px}
+  .dl .fl{padding-top:14px;border-top:1px solid var(--line-soft)}
+  .dl>.fl:first-child{border-top:0}
+  .act .btn,.act select.inp{min-height:44px}
+  .ev .hd .when{margin-left:0;flex-basis:100%}
+}

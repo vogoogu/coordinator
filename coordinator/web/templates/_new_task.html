@@ -1,0 +1,15 @@
+<dialog class="dlg" id="new-task" aria-labelledby="nt-h">
+<form method="post" action="/a/create">$token_field
+  <div class="dlg-top"><h2 id="nt-h">New task</h2><a class="ibtn xs" href="#" data-close aria-label="Close">$icon_close</a></div>
+  <div class="note info">$icon_info<span>A task needs a clear result, can't be finished in a few minutes, and matters if forgotten.</span></div>
+  <div class="two">
+    <div><label class="flab" for="nt-p">Project</label><select id="nt-p" name="project" class="inp">$project_options</select></div>
+    <fieldset class="bare"><legend class="flab">Mode</legend><div class="seg">$mode_radios</div></fieldset>
+  </div>
+  <div><label class="flab" for="nt-t">Title <i>required</i></label><input id="nt-t" name="title" class="inp" required autocomplete="off"></div>
+  <div><label class="flab" for="nt-g">Goal</label><textarea id="nt-g" name="goal" class="inp" rows="2" placeholder="What should be true when this is finished?"></textarea></div>
+  <div><label class="flab" for="nt-d">Done when</label><textarea id="nt-d" name="done_when" class="inp" rows="2" placeholder="How will you know it is finished?"></textarea></div>
+  <div><label class="flab" for="nt-s">Scope</label><input id="nt-s" name="scope" class="inp" placeholder="What may be touched, and what not" autocomplete="off"></div>
+  <div class="dlg-acts"><a class="btn" href="#" data-close>Cancel</a><button class="btn primary" type="submit">$icon_plus Create task</button></div>
+</form>
+</dialog>

@@ -1,0 +1,6 @@
+<form class="act" method="post" action="/a/comment">$token_field<input type="hidden" name="id" value="$id">
+  <label class="lab" for="cm">Add comment</label>
+  <textarea id="cm" name="text" class="inp" rows="3" placeholder="Write a note for the timeline" required></textarea>
+  <div class="row-f end"><label class="vh" for="cm-kind">Kind</label><select id="cm-kind" name="kind" class="inp narrow">$kind_options</select><button class="btn" type="submit">$icon_comment Add comment</button></div>
+  $error
+</form>

@@ -1,8 +1,18 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>$title</title>
-<link rel="stylesheet" href="/static/legacy.css"><script src="/static/board.js" defer></script></head>
-<body><header><a href="/">Coordinator</a></header><main>
-<h1>$title</h1>
-<pre class="error">$text</pre>
-<p><a href="$back">Back</a></p>
-</main></body></html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$title</title>
+<link rel="stylesheet" href="/static/board.css"><script src="/static/board.js" defer></script></head>
+<body><div class="page">
+<header class="top">
+  <a class="brand" href="/">Coordinator</a>
+  <div class="grow"></div>
+</header>
+<main class="wrap">
+<section class="card err-card" aria-labelledby="err-h">
+  <h1 id="err-h" class="err-h">$icon$title</h1>
+  <pre class="errbox">$text</pre>
+  <div><a class="btn" href="$back">$icon_back Back</a></div>
+</section>
+</main>
+</div></body></html>

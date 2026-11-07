@@ -10,7 +10,7 @@ User docs: README.md.
 - Never delete rows. Tasks end in a closed state; history stays.
 - The core never mentions Antson, forms, wikis, mail or Telegram.
 - Keep look and logic apart: web templates and CSS in `coordinator/web/`,
-  the board API (logic) in `board.py`.
+  the board API (logic) in `board.py`, page building (wording) in `pages.py`.
 - Refusals use three lines: WHAT, WHY, FIX (`coordinator/messages.py`).
 - Hooks fail open: an error in a hook is logged and the hook exits 0.
 - Never touch the user's Claude Code settings; `install-help` only prints.
@@ -20,4 +20,4 @@ User docs: README.md.
 temporary `COORDINATOR_HOME`, never the real %LOCALAPPDATA%.
 
 ## Layout
-paths, config, db, core, messages (base) -> hooks, mcp_server, board, launcher, cli (fronts).
+paths, config, db, core, messages (base) -> hooks, mcp_server, board (+ pages), launcher, cli (fronts).

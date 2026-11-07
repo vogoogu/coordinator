@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import config, core, db, launcher, messages, paths
-from .pages import page_error, page_index, page_project, page_task  # noqa: F401
+from .pages import page_error, page_index, page_project, page_task
 
 WEB_DIR = Path(__file__).parent / "web"
 STATIC_DIR = WEB_DIR / "static"
@@ -45,11 +45,16 @@ def _lease_end(claim) -> datetime:
             + timedelta(hours=core.LEASE_HOURS))
 
 
-def _card(task: dict, live: dict) -> dict:
+def _card(conn, task: dict, live: dict, cfg, kinds: dict, labels: dict, now) -> dict:
     claim = live.get(task["id"])
+    kind = kinds.get(task["state"], "unknown")
+    need = _need(conn, task, kind, cfg, labels, claim, now)
     return {"id": task["id"], "title": task["title"], "mode": task["mode"],
-            "state": task["state"], "holder": claim["session_id"] if claim else "",
-            "blocked": task["blocked"] or "", "open_points": task["open_points"]}
+            "state": task["state"], "kind": kind,
+            "holder": claim["session_id"] if claim else "",
+            "holder_since": claim["started"] if claim else "",
+            "blocked": task["blocked"] or "", "open_points": task["open_points"],
+            "since": task["updated"], "why": need["why"] if need else ""}
 
 
 # Why a task needs the person, in the order the most urgent reason wins.
@@ -150,22 +155,34 @@ def api_index(conn) -> dict:
 
 def api_project(conn, key: str) -> dict:
     proj = core.get_project(conn, key)
-    cfg = _config(proj)
+    cfg, cfg_error = _config_and_error(proj)
     live = core.live_claims(conn)
+    now = datetime.now(timezone.utc)
     tasks = core.list_tasks(conn, proj["key"])
-    states = [(s.name, s.label) for s in cfg.states] if cfg else []
-    known = {n for n, _ in states}
-    columns = [{"name": n, "label": label, "cards": [
-        _card(t, live) for t in tasks if t["state"] == n and not t["inbox"]]}
-        for n, label in states]
-    unknown = [_card(t, live) for t in tasks
+    kinds = _kinds(cfg)
+    labels = {s.name: s.label for s in cfg.states} if cfg else {}
+    cards = {t["id"]: _card(conn, t, live, cfg, kinds, labels, now) for t in tasks}
+    states = [(s.name, s.label, s.kind) for s in cfg.states] if cfg else []
+    known = {n for n, _, _ in states}
+    columns = [{"name": n, "label": label, "kind": kind, "cards": [
+        cards[t["id"]] for t in tasks if t["state"] == n and not t["inbox"]]}
+        for n, label, kind in states]
+    unknown = [cards[t["id"]] for t in tasks
                if t["state"] not in known and not t["inbox"]]
     if unknown:
-        columns.append({"name": "", "label": UNKNOWN_LABEL, "cards": unknown})
+        columns.append({"name": "", "label": UNKNOWN_LABEL, "kind": "unknown",
+                        "cards": unknown})
+    inbox = [{**cards[t["id"]], "created": t["created"],
+              "created_by_type": t["created_by_type"], "created_by_id": t["created_by_id"]}
+             for t in tasks if t["inbox"]]
     return {"token": core.board_token(conn),
-            "project": {"key": proj["key"], "name": proj["name"]},
-            "inbox": [_card(t, live) for t in tasks if t["inbox"]],
-            "columns": columns}
+            "project": {"key": proj["key"], "name": proj["name"],
+                        "config_error": cfg_error},
+            "projects": [{"key": p["key"], "name": p["name"]}
+                         for p in core.list_projects(conn)],
+            "modes": cfg.modes if cfg else [],
+            "default_mode": cfg.default_mode if cfg else "",
+            "inbox": inbox, "columns": columns}
 
 
 def api_task(conn, display_id: str) -> dict:
@@ -173,13 +190,16 @@ def api_task(conn, display_id: str) -> dict:
     proj = core.get_project(conn, t["project"])
     cfg = _config(proj)
     kinds = _kinds(cfg)
-    states = [(s.name, s.label) for s in cfg.states] if cfg else []
+    labels = {s.name: s.label for s in cfg.states} if cfg else {}
+    states = ([{"name": s.name, "label": s.label, "kind": s.kind,
+                "requires": list(s.requires)} for s in cfg.states] if cfg else [])
     if t["state"] not in kinds:
-        states.append((t["state"], t["state"]))
+        states.append({"name": t["state"], "label": t["state"], "kind": "unknown",
+                       "requires": []})
     live = [c for c in t["claims"] if c["ended"] is None]
     for c in t["claims"]:
         c["resume"] = f"claude --resume {c['session_id']}"
-    state_label = dict(states).get(t["state"], t["state"])
+    state_label = next(s["label"] for s in states if s["name"] == t["state"])
     fields = [("Title", t["title"]), ("State", state_label), ("Mode", t["mode"]),
               ("Goal", t["goal"]), ("Done when", t["done_when"]), ("Scope", t["scope"]),
               ("Origin", t["origin"]), ("Blocked", t["blocked"] or ""),
@@ -188,12 +208,20 @@ def api_task(conn, display_id: str) -> dict:
               ("Created by", f"{t['created_by_type']} {t['created_by_id']}"),
               ("Created", t["created"]), ("Updated", t["updated"]),
               ("Version", t["version"])]
+    kind = kinds.get(t["state"], "unknown")
+    need = _need(conn, t, kind, cfg, labels, live[0] if live else None,
+                 datetime.now(timezone.utc))
     return {"token": core.board_token(conn), "task": t,
+            "project": {"key": proj["key"], "name": proj["name"]},
+            "kind": kind, "state_label": state_label, "need": need,
             "fields": [{"label": a, "value": b} for a, b in fields],
-            "states": [{"name": n, "label": label} for n, label in states],
+            "states": states,
             "modes": cfg.modes if cfg else [t["mode"]],
             "live_claim": live[0]["session_id"] if live else None,
-            "can_start": kinds.get(t["state"]) == "waiting" and not live,
+            "live_since": live[0]["started"] if live else None,
+            "lease_end": (_lease_end(live[0]).isoformat(timespec="seconds")
+                          if live else None),
+            "can_start": kind == "waiting" and not live,
             "can_pin": t["inbox"], "can_force_release": bool(live)}
 
 
@@ -244,9 +272,12 @@ def do_comment(conn, f):
 
 
 def do_create(conn, f):
-    return core.create_task(conn, _f(f, "project"), _f(f, "title"), person(),
-                            goal=_f(f, "goal"), done_when=_f(f, "done_when"),
-                            scope=_f(f, "scope"))["id"]
+    t = core.create_task(conn, _f(f, "project"), _f(f, "title"), person(),
+                         goal=_f(f, "goal"), done_when=_f(f, "done_when"),
+                         scope=_f(f, "scope"))
+    if _f(f, "mode") and _f(f, "mode") != t["mode"]:
+        core.set_mode(conn, t["id"], _f(f, "mode"), person())
+    return t["id"]
 
 
 def do_start(conn, f):
@@ -263,11 +294,13 @@ ACTIONS = {"/a/state": do_state, "/a/mode": do_mode, "/a/force-release": do_forc
            "/a/pin": do_pin, "/a/comment": do_comment, "/a/create": do_create,
            "/a/start": do_start}
 GET_ROUTES = [(re.compile(r"/"), "index"), (re.compile(r"/p/([^/]+)"), "project"),
+              (re.compile(r"/p/([^/]+)/all"), "project_all"),
               (re.compile(r"/t/([^/]+)"), "task"),
               (re.compile(r"/api/index"), "index"),
               (re.compile(r"/api/project/([^/]+)"), "project"),
               (re.compile(r"/api/task/([^/]+)"), "task")]
 API = {"index": (api_index, page_index), "project": (api_project, page_project),
+       "project_all": (api_project, lambda d: page_project(d, older=True)),
        "task": (api_task, page_task)}
 
 
@@ -400,13 +433,24 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 tid = action(conn, form)
             except messages.CoordinatorError as e:
-                back = f"/t/{_f(form, 'id')}" if _f(form, "id") else "/"
-                return self._send(400, page_error(e, back))
+                return self._send(400, self._refused_page(conn, form, e))
             self._send(303, "", location=_next(form) or f"/t/{tid}")
         except Exception:
             self._internal_error()
         finally:
             conn.close()
+
+
+    def _refused_page(self, conn, form, error):
+        """A refused action: the task page with the reason next to the action that
+        was refused, or the error page when there is no task to show."""
+        tid, path = _f(form, "id"), urlsplit(self.path).path
+        if tid:
+            try:
+                return page_task(api_task(conn, tid), error=(path, error))
+            except messages.CoordinatorError:
+                pass
+        return page_error(error, _next(form) or (f"/t/{tid}" if tid else "/"))
 
 
 def make_server(port: int = 0, host: str = "127.0.0.1") -> ThreadingHTTPServer:

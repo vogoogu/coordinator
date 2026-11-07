@@ -170,6 +170,65 @@ class BoardTest(unittest.TestCase):
         self.conn.execute("DELETE FROM project")  # test-only: the app never deletes rows
         self.assertIn("No projects yet", self.get("/")[1])
 
+    def test_refusal_shows_inline_on_task_page(self):
+        tid = self.task()
+        status, body, _ = self.post("/a/state", {"id": tid, "state": "dropped", "note": ""})
+        self.assertEqual(status, 400)
+        self.assertIn('class="inline-err" role="alert"', body)
+        for w in ("WHAT:", "WHY:", "FIX:"):
+            self.assertIn(w, body)
+        self.assertIn("<h1>Build it</h1>", body)          # still the task page
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "open")
+
+    def test_create_with_mode_from_dialog(self):
+        body = self.get("/p/PA")[1]
+        self.assertIn('<dialog class="dlg" id="new-task"', body)
+        self.assertIn('value="read" checked', body)
+        status, _, h = self.post("/a/create", {"project": "PB", "title": "T", "mode": "write"})
+        self.assertEqual(status, 303)
+        t = core.get_task(self.conn, h["Location"].rsplit("/", 1)[1])
+        self.assertEqual((t["project"], t["mode"]), ("PB", "write"))
+
+    def test_finished_column_shows_last_7_days_and_older_on_all(self):
+        new, old = self.task(title="Fresh done"), self.task(title="Old done")
+        for tid in (new, old):
+            core.set_state(self.conn, tid, "done", PERSON)
+        long_ago = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat(
+            timespec="seconds")
+        self.conn.execute("UPDATE task SET updated = ? WHERE number = 2", (long_ago,))
+        body = self.get("/p/PA")[1]
+        self.assertIn("Fresh done", body)
+        self.assertNotIn("Old done", body)
+        self.assertIn('href="/p/PA/all">Show 1 older<', body)
+        status, body, _ = self.get("/p/PA/all")
+        self.assertEqual(status, 200)
+        self.assertIn("Old done", body)
+        self.assertIn("Show last 7 days only", body)
+
+    def test_empty_board_and_start_from_card(self):
+        self.assertIn("No tasks yet", self.get("/p/PB")[1])
+        tid = self.task()
+        body = self.get("/p/PA")[1]
+        self.assertIn("Start · read", body)
+        with mock.patch("coordinator.launcher.start_chat") as start:
+            status, _, h = self.post("/a/start", {"id": tid, "next": "/p/PA"})
+        self.assertEqual((status, h["Location"]), (303, "/p/PA"))
+        start.assert_called_once()
+
+    def test_task_page_timeline_and_chats(self):
+        tid = self.task()
+        core.claim(self.conn, tid, "abcd-9999", transcript_path="C:\\t\\a.jsonl")
+        body = self.get(f"/t/{tid}")[1]
+        self.assertIn("chat abcd working", body)
+        self.assertIn('data-action="claim"', body)
+        self.assertIn('data-action="created"', body)
+        self.assertIn(">Working<", body)
+        self.assertIn("Chat abcd already holds this task.", body)
+        core.stop_without_report(self.conn, "abcd-9999", "gone")
+        body = self.get(f"/t/{tid}")[1]
+        self.assertIn("The chat stopped without a report.", body)
+        self.assertIn(">No report<", body)
+
     def test_project_board_columns_follow_config(self):
         self.task("PA")
         body = self.get("/p/PA")[1]
