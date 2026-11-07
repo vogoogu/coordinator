@@ -7,7 +7,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import config, core, db, messages, paths
+from . import config, core, db, messages, notify, paths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HOOK_EVENTS = (
@@ -141,7 +141,10 @@ def cmd_enforcement(args, conn):
 
 
 def cmd_expire(args, conn):
+    m = notify.mark(conn)
     ids = core.expire_leases(conn, hours=args.hours)
+    if ids:
+        notify.fire(conn, m, ids)
     print("Expired: " + ", ".join(ids) if ids else "Nothing expired.")
     return 0
 

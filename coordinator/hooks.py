@@ -15,10 +15,10 @@ if not __package__:  # started as a script: make `coordinator` importable
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from coordinator import config, core, db, messages, paths  # noqa: E402
+    from coordinator import config, core, db, messages, notify, paths  # noqa: E402
     _IMPORT_FAILURE = None
 except Exception:  # fail open: an import problem must not break the session
-    config = core = db = messages = paths = None
+    config = core = db = messages = notify = paths = None
     _IMPORT_FAILURE = traceback.format_exc()
 
 EDIT_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
@@ -129,7 +129,10 @@ def _session_start(conn, payload, env) -> HookResult:
     cwd = payload.get("cwd") or ""
     transcript = payload.get("transcript_path") or ""
     source = payload.get("source") or "startup"
-    core.expire_leases(conn)
+    m = notify.mark(conn)
+    expired = core.expire_leases(conn)
+    if expired:
+        notify.fire(conn, m, expired)
     wanted = env.get("COORD_TASK")
     launch = env.get("COORD_LAUNCH") or None
     if wanted and source == "clear" and launch:
@@ -220,7 +223,9 @@ def _stop(conn, payload, env) -> HookResult:
     if not sid or not core.needs_report(conn, sid):
         return HookResult()
     if payload.get("stop_hook_active"):
+        m = notify.mark(conn)
         core.stop_without_report(conn, sid, STOP_NOTE)
+        notify.fire(conn, m)
         return HookResult()
     held = core.claim_for_session(conn, sid)
     if held is None:  # the claim ended after needs_report: nothing to remind

@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from coordinator import core, db, hooks
+os.environ.setdefault("COORDINATOR_NOTIFY_SINK", os.devnull)
+
+from coordinator import core, db, hooks  # noqa: E402
 
 PERSON = core.Actor("person", "daria")
 REPO = Path(__file__).resolve().parent.parent
@@ -397,6 +399,35 @@ class HooksTest(unittest.TestCase):
         self.assertIn("stopped without report after reminder",
                       [c["text"] for c in t["comments"]])
         self.assertIsNone(core.claim_for_session(self.conn, "sess-1"))
+
+    def sunk_during(self, fn):
+        sink = os.path.join(self.tmp, "sink.jsonl")
+        with mock.patch.dict(os.environ, {"COORDINATOR_NOTIFY_SINK": sink}):
+            fn()
+        if not os.path.isfile(sink):
+            return []
+        with open(sink, encoding="utf-8") as f:
+            return [json.loads(line) for line in f]
+
+    def test_stop_without_report_sends_needs_you(self):
+        tid = self.claimed()
+        self.work()
+        [rec] = self.sunk_during(lambda: self.stop(active=True))
+        self.assertEqual((rec["heading"], rec["line2"]),
+                         (f"{tid} needs you", "Chat stopped without a report"))
+
+    def test_stop_reminder_sends_nothing(self):
+        self.claimed()
+        self.work()
+        self.assertEqual(self.sunk_during(lambda: self.stop()), [])
+
+    def test_session_start_expiry_sends_one_summary(self):
+        self.claimed()
+        tid2 = self.task("write")
+        core.claim(self.conn, tid2, "sess-9")
+        self.conn.execute("UPDATE claim SET last_seen = '2020-01-01T00:00:00+00:00'")
+        [rec] = self.sunk_during(lambda: self.start(session_id="sess-2"))
+        self.assertEqual(rec["heading"], "2 tasks need you")
 
     def test_stop_race_claim_gone_exits_silently(self):
         self.claimed()

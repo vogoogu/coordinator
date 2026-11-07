@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import config, core, db, launcher, messages, paths
+from . import config, core, db, launcher, messages, notify, paths
 from .pages import page_error, page_index, page_project, page_task
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -366,7 +366,7 @@ class Handler(BaseHTTPRequestHandler):
     def _get(self, name, as_json, arg):
         conn = db.connect()
         try:
-            core.expire_leases(conn)
+            _expire(conn)
             fetch, page = API[name]
             data = fetch(conn, arg) if arg is not None else fetch(conn)
             if as_json:
@@ -429,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
             if not (self._origin_ok() and hmac.compare_digest(
                     _f(form, "token").encode(), core.board_token(conn).encode())):
                 return self._plain(403, "Forbidden: bad token or origin")
-            core.expire_leases(conn)
+            _expire(conn)
             try:
                 tid = action(conn, form)
             except messages.CoordinatorError as e:
@@ -455,6 +455,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def make_server(port: int = 0, host: str = "127.0.0.1") -> ThreadingHTTPServer:
     return ThreadingHTTPServer((host, port), Handler)
+
+
+def _expire(conn) -> None:
+    """Expire stale claims; pop-ups for what expired."""
+    m = notify.mark(conn)
+    expired = core.expire_leases(conn)
+    if expired:
+        notify.fire(conn, m, expired)
 
 
 def serve(host: str = "127.0.0.1", port: int = 8790, open_browser: bool = True) -> None:

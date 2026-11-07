@@ -12,7 +12,9 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import urlencode
 
-from coordinator import board, core, db, launcher, pages
+os.environ.setdefault("COORDINATOR_NOTIFY_SINK", os.devnull)
+
+from coordinator import board, core, db, launcher, pages  # noqa: E402
 
 PERSON = core.Actor("person", "daria")
 
@@ -92,6 +94,28 @@ class BoardTest(unittest.TestCase):
         if origin:
             h.setdefault("Origin", self.origin())
         return self.request("POST", path, form=f, headers=h)
+
+    def sunk_during(self, fn):
+        sink = os.path.join(self.tmp, "sink.jsonl")
+        with mock.patch.dict(os.environ, {"COORDINATOR_NOTIFY_SINK": sink}):
+            fn()
+        if not os.path.isfile(sink):
+            return []
+        with open(sink, encoding="utf-8") as f:
+            return [json.loads(line) for line in f]
+
+    def test_board_page_load_expires_and_notifies(self):
+        tid = self.task("PA", "Lost chat")
+        core.claim(self.conn, tid, "sess-gone")
+        self.conn.execute("UPDATE claim SET last_seen = '2020-01-01T00:00:00+00:00'")
+        [rec] = self.sunk_during(lambda: self.get("/"))
+        self.assertEqual(rec["heading"], f"{tid} needs you")
+
+    def test_board_page_load_without_expiry_is_quiet(self):
+        tid = self.task("PA", "Busy")
+        core.claim(self.conn, tid, "sess-live")
+        core.release(self.conn, tid, "sess-live", "done", "earlier")
+        self.assertEqual(self.sunk_during(lambda: (self.get("/"), self.get("/"))), [])
 
     # ------------------------------------------------------------ the brief's tests
     def test_index_lists_needs_you_across_projects(self):

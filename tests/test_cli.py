@@ -9,7 +9,9 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-from coordinator import board, cli, core, db, paths
+os.environ.setdefault("COORDINATOR_NOTIFY_SINK", os.devnull)
+
+from coordinator import board, cli, core, db, paths  # noqa: E402
 
 
 class CliTest(unittest.TestCase):
@@ -171,6 +173,22 @@ class CliTest(unittest.TestCase):
         code, out, err = self.run_cli("expire", "--hours=-1")
         self.assertEqual(code, 0, err)
         self.assertIn("PX-1", out)
+
+    def test_expire_command_notifies(self):
+        self.init()
+        self.run_cli("create", "PX", "T")
+        conn = db.connect()
+        try:
+            core.claim(conn, "PX-1", "s1")
+        finally:
+            conn.close()
+        sink = os.path.join(self.tmp, "sink.jsonl")
+        with mock.patch.dict(os.environ, {"COORDINATOR_NOTIFY_SINK": sink}):
+            code, out, err = self.run_cli("expire", "--hours=-1")
+        self.assertEqual(code, 0, err)
+        with open(sink, encoding="utf-8") as f:
+            [rec] = [json.loads(line) for line in f]
+        self.assertEqual(rec["heading"], "PX-1 needs you")
 
     def test_backup_keeps_14(self):
         dest = Path(self.tmp, "bk")

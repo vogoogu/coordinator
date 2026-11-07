@@ -125,6 +125,23 @@ def collect(conn, since: int, task_ids: Iterable[str] | None = None) -> list[Ale
     return list(alerts.values())
 
 
+def fire(conn, since: int, task_ids: Iterable[str] | None = None) -> None:
+    """Show pop-ups for chat/system moves since event `since`. Call after the core
+    call has returned. Never raises; errors go to notify-errors.log."""
+    try:
+        settings = load_settings()
+        toasts = compose(collect(conn, since, task_ids), settings)
+        if not toasts:
+            return
+        if not toast.board_up(settings.board_port):
+            toast.start_board(settings.board_port)
+        aumid = toast.AUMID if toast.registered() else toast.PS_AUMID
+        for t in toasts:
+            toast.show(t, aumid)
+    except Exception:
+        log_error("fire")
+
+
 def _sound(kind: str, s: Settings) -> str:
     if not s.sound:
         return ""

@@ -153,6 +153,53 @@ class NotifyTest(unittest.TestCase):
         t, = notify.compose([self.alert()], notify.Settings(board_port=9000))
         self.assertEqual(t.url, "http://127.0.0.1:9000/t/KMU-1")
 
+    # ------------------------------------------------------------ fire
+    def test_fire_shows_and_starts_board(self):
+        with mock.patch.object(notify.toast, "show") as show, \
+                mock.patch.object(notify.toast, "board_up", return_value=False), \
+                mock.patch.object(notify.toast, "start_board") as start, \
+                mock.patch.object(notify.toast, "registered", return_value=True):
+            m = notify.mark(self.conn)
+            core.release(self.conn, self.tid, "s1", "done", "ok")
+            notify.fire(self.conn, m, [self.tid])
+        start.assert_called_once_with(8790)
+        self.assertEqual(show.call_args.args[0].heading, f"{self.tid} is ready to check")
+        self.assertEqual(show.call_args.args[1], "Coordinator.Board")
+
+    def test_fire_board_already_up_is_not_started(self):
+        with mock.patch.object(notify.toast, "show"), \
+                mock.patch.object(notify.toast, "board_up", return_value=True), \
+                mock.patch.object(notify.toast, "start_board") as start:
+            m = notify.mark(self.conn)
+            core.release(self.conn, self.tid, "s1", "done", "ok")
+            notify.fire(self.conn, m)
+        start.assert_not_called()
+
+    def test_fire_falls_back_to_powershell_aumid(self):
+        with mock.patch.object(notify.toast, "show") as show, \
+                mock.patch.object(notify.toast, "board_up", return_value=True), \
+                mock.patch.object(notify.toast, "registered", return_value=False):
+            m = notify.mark(self.conn)
+            core.release(self.conn, self.tid, "s1", "done", "ok")
+            notify.fire(self.conn, m)
+        self.assertEqual(show.call_args.args[1], notify.toast.PS_AUMID)
+
+    def test_fire_nothing_to_show_touches_nothing(self):
+        with mock.patch.object(notify.toast, "show") as show, \
+                mock.patch.object(notify.toast, "board_up") as up:
+            notify.fire(self.conn, notify.mark(self.conn))
+        show.assert_not_called()
+        up.assert_not_called()
+
+    def test_fire_swallows_errors(self):
+        with mock.patch.object(notify.toast, "show", side_effect=OSError("boom")), \
+                mock.patch.object(notify.toast, "board_up", return_value=True):
+            m = notify.mark(self.conn)
+            core.release(self.conn, self.tid, "s1", "done", "ok")
+            self.assertIsNone(notify.fire(self.conn, m))
+        log = (paths.app_home() / "notify-errors.log").read_text(encoding="utf-8")
+        self.assertIn("fire", log)
+
     # ------------------------------------------------------------ settings
     def test_settings_file(self):
         (paths.app_home() / "notify.toml").write_text(

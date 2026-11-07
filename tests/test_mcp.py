@@ -9,7 +9,9 @@ import threading
 import unittest
 from pathlib import Path
 
-from coordinator import core, db
+os.environ.setdefault("COORDINATOR_NOTIFY_SINK", os.devnull)
+
+from coordinator import core, db  # noqa: E402
 
 PERSON = core.Actor("person", "daria")
 REPO = Path(__file__).resolve().parent.parent
@@ -37,7 +39,9 @@ class McpTest(unittest.TestCase):
                 os.environ.pop("COORDINATOR_HOME", None)
             else:
                 os.environ["COORDINATOR_HOME"] = old
-        env = dict(os.environ, COORDINATOR_HOME=self.home)
+        self.sink = os.path.join(self.tmp, "sink.jsonl")
+        env = dict(os.environ, COORDINATOR_HOME=self.home,
+                   COORDINATOR_NOTIFY_SINK=self.sink)
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "coordinator.mcp_server"], cwd=str(REPO),
             env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -137,6 +141,45 @@ class McpTest(unittest.TestCase):
         self.assertFalse(err, t)
         self.assertEqual(len(self.call("task_list", project="KMU")[1]), 1)
         self.assertEqual(self.call("task_list", state="nope")[1], [])
+
+    def sunk(self):
+        if not os.path.isfile(self.sink):
+            return []
+        with open(self.sink, encoding="utf-8") as f:
+            return [json.loads(line) for line in f]
+
+    def claimed_task(self):
+        err, t = self.call("task_create", session_id="s1", project="KMU", title="Do it")
+        self.assertFalse(err, t)
+        err, t = self.call("task_claim", session_id="s1", id=t["id"])
+        self.assertFalse(err, t)
+        return t["id"]
+
+    def test_release_done_sends_toast(self):
+        tid = self.claimed_task()
+        err, t = self.call("task_release", session_id="s1", id=tid,
+                           outcome="done", note="all good")
+        self.assertFalse(err, t)
+        [rec] = self.sunk()
+        self.assertEqual((rec["heading"], rec["line2"], rec["kind"]),
+                         (f"{tid} is ready to check", "all good", "finished"))
+
+    def test_set_state_clarify_sends_toast(self):
+        tid = self.claimed_task()
+        err, t = self.call("task_set_state", session_id="s1", id=tid,
+                           state="clarify", note="v3 or v4?")
+        self.assertFalse(err, t)
+        [rec] = self.sunk()
+        self.assertEqual((rec["heading"], rec["line2"]), (f"{tid} needs you", "v3 or v4?"))
+
+    def test_release_survives_toast_failure(self):
+        tid = self.claimed_task()
+        os.makedirs(self.sink)  # appending to a directory fails inside notify
+        err, t = self.call("task_release", session_id="s1", id=tid,
+                           outcome="done", note="all good")
+        self.assertFalse(err, t)
+        self.assertEqual(t["state"], "review")
+        self.assertTrue(os.path.isfile(os.path.join(self.home, "notify-errors.log")))
 
     def test_person_only_action_returns_is_error(self):
         _, t = self.call("task_create", session_id="s1", project="KMU", title="x")

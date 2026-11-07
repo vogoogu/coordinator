@@ -11,7 +11,7 @@ import traceback
 if not __package__:  # started as a script: make `coordinator` importable
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from coordinator import core, db  # noqa: E402
+from coordinator import core, db, notify  # noqa: E402
 from coordinator.messages import CoordinatorError, render  # noqa: E402
 
 SERVER_INFO = {"name": "coordinator", "version": "0.1.0"}
@@ -195,12 +195,19 @@ def _dispatch(conn, name, a):
         return core.claim(conn, _req(a, "id"), a["session_id"], "", "")
     if name == "task_release":
         _actor(a)
-        return core.release(conn, _req(a, "id"), a["session_id"],
-                            _req(a, "outcome"), _req(a, "note"))
+        m = notify.mark(conn)
+        t = core.release(conn, _req(a, "id"), a["session_id"],
+                         _req(a, "outcome"), _req(a, "note"))
+        notify.fire(conn, m, [t["id"]])
+        return t
     if name == "task_set_state":
-        return core.set_state(conn, _req(a, "id"), _req(a, "state"), _actor(a),
-                              expected_state=_opt(a, "expected_state"),
-                              note=_opt(a, "note") or "")
+        actor = _actor(a)
+        m = notify.mark(conn)
+        t = core.set_state(conn, _req(a, "id"), _req(a, "state"), actor,
+                           expected_state=_opt(a, "expected_state"),
+                           note=_opt(a, "note") or "")
+        notify.fire(conn, m, [t["id"]])
+        return t
     if name == "task_comment":
         return core.comment(conn, _req(a, "id"), _actor(a), _req(a, "kind"),
                             _req(a, "text"))
