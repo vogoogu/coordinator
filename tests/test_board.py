@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 from urllib.parse import urlencode
 
-from coordinator import board, core, db, launcher
+from coordinator import board, core, db, launcher, pages
 
 PERSON = core.Actor("person", "daria")
 
@@ -148,9 +148,9 @@ class BoardTest(unittest.TestCase):
         self.assertIn("7 things need you", body)
 
     def test_monogram_and_tint(self):
-        self.assertEqual(board.monogram("Name PA"), "NP")
-        self.assertEqual(board.monogram("Skill"), "SK")
-        self.assertEqual(board.monogram("--"), "?")
+        self.assertEqual(pages.monogram("Name PA"), "NP")
+        self.assertEqual(pages.monogram("Skill"), "SK")
+        self.assertEqual(pages.monogram("--"), "?")
         body = self.get("/")[1]
         self.assertRegex(body, r'class="mark m[1-5]" aria-hidden="true">NP<')
 
@@ -271,7 +271,7 @@ class BoardTest(unittest.TestCase):
             f.write_text(f.read_text(encoding="utf-8") + "<!-- swapped -->",
                          encoding="utf-8")
         (alt / "static" / "board.css").write_text("body{color:red}", encoding="utf-8")
-        with mock.patch.object(board, "TEMPLATE_DIR", alt / "templates"), \
+        with mock.patch.object(pages, "TEMPLATE_DIR", alt / "templates"), \
                 mock.patch.object(board, "STATIC_DIR", alt / "static"):
             self.assertEqual([self.get_json(p) for p in paths], before)
             self.assertIn("swapped", self.get("/")[1])
