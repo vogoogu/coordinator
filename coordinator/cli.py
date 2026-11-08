@@ -10,10 +10,14 @@ from pathlib import Path
 from . import config, core, db, messages, notify, paths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# PostToolUse is the lease heartbeat. Built-in tools only: MCP tools (browser
+# steps above all) are the most frequent calls, and each hook run costs ~0.6 s.
+POST_TOOL_MATCHER = ("Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|PowerShell"
+                     "|WebFetch|WebSearch|Agent|Task")
 HOOK_EVENTS = (
     ("SessionStart", None, "session-start"),
     ("PreToolUse", "Write|Edit|MultiEdit|NotebookEdit", "pre-tool"),
-    ("PostToolUse", None, "post-tool"),
+    ("PostToolUse", POST_TOOL_MATCHER, "post-tool"),
     ("Stop", None, "stop"),
 )
 

@@ -266,7 +266,10 @@ class CliTest(unittest.TestCase):
         self.assertEqual(set(hooks), {"SessionStart", "PreToolUse", "PostToolUse", "Stop"})
         self.assertEqual(hooks["PreToolUse"][0]["matcher"],
                          "Write|Edit|MultiEdit|NotebookEdit")
-        self.assertNotIn("matcher", hooks["PostToolUse"][0])
+        post = hooks["PostToolUse"][0]["matcher"].split("|")
+        self.assertIn("Write", post)
+        self.assertIn("Bash", post)
+        self.assertFalse(any(t.startswith("mcp__") for t in post))
         cmd = hooks["Stop"][0]["hooks"][0]
         self.assertEqual(cmd["timeout"], 30)
         self.assertTrue(cmd["command"].startswith('python "'))

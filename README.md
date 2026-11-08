@@ -18,6 +18,11 @@ in `cmd`.
 This opens the board in your browser (`--port 8790` by default, `--no-browser` to
 skip the browser). A daily backup of the database is made at start.
 
+To check that the board is running, test whether port 8790 accepts a connection,
+for example `Test-NetConnection 127.0.0.1 -Port 8790` in PowerShell. Don't load a
+page for that: every page request also expires stale leases, which can move tasks
+and show pop-ups.
+
 ## Add a project
 
 - New project: `python -m coordinator init-project <folder> --key KEY --name "Name"`
@@ -40,6 +45,13 @@ yourself (merge the JSON into `%USERPROFILE%\.claude\settings.json`, run the
 
 `--env` takes several values, so `--scope user` comes after it and before the
 server name `coordinator`; the `PYTHONPATH` value is quoted.
+
+The PostToolUse hook keeps a chat's lease alive. Its matcher lists only Claude
+Code's built-in tools, because each run costs about 0.6 s and MCP tools (browser
+steps above all) are called most often. A chat that uses only MCP tools for more
+than 4 hours can therefore lose its lease. If you installed the hooks before
+8 November 2026, add this `"matcher"` to your PostToolUse entry (run
+`install-help` to see it).
 
 ## Warn or block
 
