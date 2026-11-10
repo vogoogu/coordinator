@@ -62,12 +62,20 @@ task only gets a notice. With `block` the edit is refused. Start with `warn`:
 
 ## Where the data lives
 
-`%LOCALAPPDATA%\coordinator\`
+`%USERPROFILE%\.coordinator\`
+
+It used to be `%LOCALAPPDATA%\coordinator\`. The Microsoft Store Python silently
+redirects that folder into its own package folder, where other programs never see
+it. On first use the old folder is copied over once (the database through sqlite's
+backup, so the copy is consistent); the old folder is left untouched. Restart the
+board after updating so that it uses the new folder too.
 
 - `coordinator.db` - all tasks, comments, claims and history (nothing is deleted)
 - `backups\` - one copy per day, the newest 14 are kept
 - `hook-errors.log`, `board-errors.log` and `notify-errors.log` - problems that were caught
 - `notify.toml` - pop-up settings (optional, see Notifications)
+- `antson.toml` - where the mode guard's `mode.py` is (optional, see Modes)
+- `reports-intake.json` - how far `reports.jsonl` has been read, and what it reported
   (if that folder is unusable, hook errors go to `%TEMP%\coordinator-hook-errors.log`)
 
 ## How a chat works with a task
@@ -99,7 +107,7 @@ This writes one entry under your user in the registry
 (`HKCU\Software\Classes\AppUserModelId\Coordinator.Board`). Undo it with
 `python -m coordinator uninstall-notify`.
 
-Settings in `%LOCALAPPDATA%\coordinator\notify.toml` (all optional):
+Settings in `%USERPROFILE%\.coordinator\notify.toml` (all optional):
 
     enabled = true        # pop-ups on/off
     sound = true          # sound on/off
@@ -110,6 +118,30 @@ Settings in `%LOCALAPPDATA%\coordinator\notify.toml` (all optional):
 Known limits: a chat window that crashes or is closed without its stop hook is
 noticed only after 4 hours, and only when the board is used or a chat starts.
 With Windows "Do not disturb" on, the pop-up waits but the sound still plays.
+
+## Modes (Antson projects)
+
+The **Modes** button on the board opens one table per project with every form,
+sub-form and interface the mode guard knows: its mode (read, dev or prod), "(from form)"
+when it inherits, its parent, and a **new** tag for items that a chat opened or created
+and that you have not set yet. Each row has read / dev / prod buttons; tick several rows
+and use the buttons under the table to set them in one call (one confirmation window).
+
+- The board never writes the guard's files and never answers its window. A button runs
+  `python <guard>\mode.py set <ids...> <mode> --by board --json`. Lowering needs no
+  window; raising opens a Yes/No window on your desktop (60 s, a timeout counts as No).
+  The page shows "Changing ..." and refreshes itself until you have answered.
+- It reads `modes.json`, `reports.jsonl` and `go\<session>.json` from
+  `%USERPROFILE%\.antson\` (`ANTSON_STATE_DIR` overrides it).
+- **Needs you** on the first page lists: "Mode file changed outside the switch"
+  (`mode.py check-hash`), a chat waiting for your go ("chat X waits for your go: 1. ...,
+  2. ..."; answer in that chat with `go 1, 2`) and a refused ready check with its reason.
+  Go files untouched for 12 hours are ignored.
+- `mode.py` is found at `C:\Projects\_mail-desk\tools\guard\mode.py` unless
+  `mode_py = "<path>"` is set in `antson.toml` in the coordinator folder (or the
+  environment variable `COORDINATOR_GUARD_MODE_PY` is set).
+- Antson projects set `default_mode = "write"` in their `project.toml` and keep
+  `modes = ["read", "write"]`: the modes of forms replace per-task modes there.
 
 ## Run the tests
 
