@@ -19,7 +19,7 @@ from coordinator import board, core, db, launcher, pages  # noqa: E402
 PERSON = core.Actor("person", "daria")
 
 
-class BoardTest(unittest.TestCase):
+class BoardBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="coord_board_")
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -112,6 +112,8 @@ class BoardTest(unittest.TestCase):
         with open(sink, encoding="utf-8") as f:
             return [json.loads(line) for line in f]
 
+
+class BoardTest(BoardBase):
     def test_board_page_load_expires_and_notifies(self):
         tid = self.task("PA", "Lost chat")
         core.claim(self.conn, tid, "sess-gone")

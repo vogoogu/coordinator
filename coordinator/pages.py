@@ -707,7 +707,7 @@ def page_modes(d) -> Raw:
                              bulk=Raw("".join(render("_modes_btn.html", name="mode", value=m,
                                                      label=m, off="") for m in ("read", "dev", "prod")))))
     waiting = bool(d["job"]) and d["job"]["state"] == "waiting"
-    return render("modes.html", title="Modes", icon_modes=icon("sliders", ""),
+    return render("modes.html", title="Modes",
                   refresh=Raw('<meta http-equiv="refresh" content="3">\n' if waiting else ""),
                   notices=Raw("".join(notes)),
                   groups=Raw("".join(groups)) if groups
