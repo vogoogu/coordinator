@@ -1,9 +1,12 @@
 """Local web board. Pages are formatted from the same dicts the /api routes return;
 all writes go through core as the person. No HTML lives here (see web/templates)."""
+import errno
 import getpass
 import hmac
 import json
 import re
+import socket
+import sys
 import traceback
 import webbrowser
 from datetime import datetime, timedelta, timezone
@@ -11,17 +14,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import antson, config, core, db, launcher, messages, notify, paths
-from .pages import page_error, page_index, page_modes, page_project, page_task
+from . import antson, config, core, db, desk, feedback, launcher, messages, notify, paths, sources, wiki
+from .pages import page_error, page_index, page_modes, page_needs, page_project, page_task
 
 WEB_DIR = Path(__file__).parent / "web"
 STATIC_DIR = WEB_DIR / "static"
 KINDS = config.KINDS
 SOON = timedelta(minutes=30)
 MAX_BODY = 1_000_000
-CONTENT_TYPES = {".css": "text/css; charset=utf-8",
+CONTENT_TYPES = {".css": "text/css; charset=utf-8", ".png": "image/png",
                  ".js": "text/javascript; charset=utf-8"}
 UNKNOWN_LABEL = "Unknown state"
+FINAL = ("finished", "closed")
 
 
 def person() -> core.Actor:
@@ -149,11 +153,159 @@ def api_index(conn) -> dict:
                                                   if n),
                          "tone": tone, "needs_count": len(items), "chats": chats,
                          "config_error": cfg_error})
+    outside = api_outside(conn, _fresh["now"])
+    by_key = {c["key"].upper(): c for c in outside["cards"] if c["key"]}
+    for p in projects:
+        card = by_key.get(p["key"].upper())
+        p["wiki"] = card
+        if card:
+            p["needs_count"] += card["me_count"]
+            if card["tone"] == "red" or (card["tone"] == "amber" and p["tone"] == "green"):
+                p["tone"] = card["tone"]
     projects.sort(key=lambda p: (TONE_ORDER[p["tone"]], -p["needs_count"],
                                  (p["name"] or p["key"]).lower()))
+    own = [c for c in outside["cards"] if not c["key"] and (c["items"] or c["notes"] or c.get("fixed")
+                                                             or c["tone"] != "green")]
+    own.sort(key=lambda c: (TONE_ORDER[c["tone"]], -c["me_count"], c["name"].lower()))
     return {"token": core.board_token(conn),
             "enforcement": core.get_setting(conn, "enforcement", "warn"),
-            "projects": projects, "needs_you": needs, "guard": _guard(conn)}
+            "projects": projects, "needs_you": needs, "guard": _guard(conn),
+            "outside": {**outside, "cards": own}}
+
+
+# ------------------------------------------------------------------ needs from outside (wikis, feedback, desk)
+OUTSIDE_TTL = 20                       # seconds: reading all sources takes a few seconds
+CHANGE_KINDS = ("change_open", "change_queued")
+RED_KINDS = ("failed", "ingest_interrupted")
+GROUP_OF = {"client": "others", "antson-expert": "others", "claude": "build"}
+UNROUTED = "unrouted"
+_outside = {"at": 0.0, "data": None}
+_fresh = {"now": False}              # set by the handler for /?fresh=1
+
+
+def _age_days(since, now):
+    return max(0.0, (now - datetime.fromisoformat(since)).total_seconds() / 86400) if since else None
+
+
+def _without_doubles(items: list) -> list:
+    """A desk item that carries a Change id is the one with the action: the project's own entry for that Change is hidden."""
+    covered = {(i["project"], i["change"]) for i in items if i["change"] and i["kind"] not in CHANGE_KINDS}
+    handed = {i["handover_id"] for i in items if i["handover_id"] and i["kind"].startswith("update_")}
+    return [i for i in items if not (i["kind"] in CHANGE_KINDS and (i["project"], i["id"]) in covered)
+            and not (i["kind"] == "handover" and i["id"] in handed)]
+
+
+def _decorate(i: dict, cfg: dict, folder: str, now) -> dict:
+    age = _age_days(i["since"], now)
+    amber, red = cfg.get("amber_days", 3), cfg.get("red_days", 7)
+    group = "build" if i["kind"] == "waiting_publish" else GROUP_OF.get(i["waits_on"], "me")
+    level = "none" if age is None else "red" if age > red else "amber" if age > amber else "none"
+    return {**i, "age_days": age, "level": level, "group": group,
+            "how_to_act": wiki.how_to(i, folder, (cfg.get("desk") or {}).get("cwd", ""))}
+
+
+def _outside_card(name, key, folder, items, extra) -> dict:
+    me = [i for i in items if i["group"] == "me"]
+    down = extra.get("down", [])
+    red = bool(down) or any(i["level"] == "red" or i["kind"] in RED_KINDS for i in me)
+    amber = any(i["level"] == "amber" for i in me) or bool(extra.get("health"))
+    notes = [{"text": messages.source_unreadable(d["name"], d["error"]), "level": "red"} for d in down]
+    notes += [{"text": f"showing older data of {s['name']} (from {s['at'][:16].replace('T', ' ')})",
+               "level": "amber"} for s in extra.get("stale", [])]
+    return {"name": name, "key": key, "project_dir": folder or "", "items": items,
+            "me_count": len(me), "health": extra.get("health", []), "notes": notes,
+            "tone": "red" if red else "amber" if amber else "green", **{k: v for k, v in extra.items()
+                                                                          if k in ("fixed", "logo")}}
+
+
+def _read_outside(coord: list) -> dict:
+    cfg = sources.settings()
+    empty = {"configured": False, "cards": [], "strip": [], "learnings": None, "warnings": []}
+    if not cfg:
+        return empty
+    now = datetime.now().astimezone()
+    registry = wiki.load_registry(cfg.get("registry", "")) if cfg.get("registry") else []
+    state_script = cfg.get("state_script", "")
+    fb, dk = feedback.spec(cfg.get("feedback") or {}), desk.specs(cfg.get("desk") or {})
+    specs = [s for e in registry if e["project_dir"] for s in wiki.specs(e["name"], e["project_dir"], state_script)]
+    specs += ([fb] if fb else []) + dk
+    res = sources.fetch_all(specs, int(cfg.get("timeout_s", 60)))
+    items, extras, warnings = [], {}, []
+    folders = {e["name"]: e["project_dir"] for e in registry}
+    for e in registry:
+        name, folder = e["name"], e["project_dir"]
+        if not folder:
+            extras[name] = {"down": [{"name": "the project folder", "error": "folder not found"}]}
+            continue
+        r = wiki.read_project(name, res)
+        extras[name] = r
+        items += [_decorate(i, cfg, folder, now) for i in r["items"]]
+    fb_meta = None
+    if fb:
+        r = res["feedback"]
+        extras[feedback.CARD] = {"fixed": True, "logo": "antson"}
+        if r.ok:
+            more, fb_meta = feedback.items(r.data)
+            items += [_decorate(i, cfg, "", now) for i in more]
+            if r.stale:
+                extras[feedback.CARD]["stale"] = [{"name": "feedback", "at": r.at.isoformat(), "error": r.error}]
+        else:
+            extras[feedback.CARD]["down"] = [{"name": "feedback", "error": r.error}]
+    if dk:
+        r = res["desk"]
+        if r.ok:
+            items += [_decorate(i, cfg, "", now) for i in desk.items(r.data)]
+            if desk.warning(r.data):
+                warnings.append(desk.warning(r.data))
+            if r.stale:
+                warnings.append(messages.source_unreadable("desk", r.error) + f" (showing items from {r.at:%d.%m. %H:%M})")
+        else:
+            warnings.append(messages.source_unreadable("desk", r.error))
+    learn = antson.unprocessed_learnings((cfg.get("learnings") or {}).get("inbox"))
+    if learn is not None:
+        extras.setdefault(feedback.CARD, {"fixed": True, "logo": "antson"})
+    items = _without_doubles(items)
+    names = [e["name"] for e in registry]
+    for n in sorted({i["project"] for i in items} - set(names) - {feedback.CARD}):
+        extras.setdefault(n, {})
+        names.append(n)
+    if feedback.CARD in extras:
+        names.append(feedback.CARD)
+    cards = []
+    for n in names:
+        key = wiki.coordinator_key(folders.get(n), coord)
+        cards.append(_outside_card(n, key, folders.get(n), [i for i in items if i["project"] == n], extras.get(n, {})))
+    strip = feedback.folder_signals(cfg.get("folders"), now)
+    if dk:
+        h = res["desk_health"]
+        nxt = (h.data.get("next_checks") or [None])[0] if h.ok and isinstance(h.data, dict) else None
+        try:
+            text = "next check " + datetime.fromisoformat(nxt).strftime("%d.%m. %H:%M")
+        except (TypeError, ValueError):
+            text = "not reachable" if not h.ok else "mode " + str((h.data or {}).get("mode", "unknown"))
+        strip.insert(0, {"name": "Mail desk", "text": text})
+    if fb_meta is not None:
+        strip.insert(0, {"name": "Feedback digest", "digest": fb_meta.get("schedule_last_run")})
+    return {"configured": True, "cards": cards, "strip": strip, "learnings": learn, "warnings": warnings,
+            "generated": now.isoformat(timespec="seconds")}
+
+
+def api_outside(conn, fresh: bool = False) -> dict:
+    """What waits for Daria outside the task database, read live. One short in-memory
+    cache so a page load does not start every source each time; nothing is written to disk."""
+    import time
+    if fresh or _outside["data"] is None or time.monotonic() - _outside["at"] > OUTSIDE_TTL:
+        _outside["data"] = _read_outside(core.list_projects(conn))
+        _outside["at"] = time.monotonic()
+    return _outside["data"]
+
+
+def api_needs(conn, name: str) -> dict:
+    out = api_outside(conn)
+    card = next((c for c in out["cards"] if c["name"] == name), None)
+    if card is None:
+        raise messages.unknown_project(name)
+    return {"token": core.board_token(conn), "card": card, "learnings": out["learnings"] if card.get("fixed") else None}
 
 
 # ------------------------------------------------------------------ modes (Antson guard)
@@ -399,6 +551,21 @@ def do_modes(conn, f):
     return ""
 
 
+def do_make_task(conn, f):
+    """One "Needs you" item becomes one task of its project. Several items into one
+    task is not offered (grouping is decided in the project)."""
+    name, key = _f(f, "name"), _f(f, "key")
+    if not key:
+        raise messages.make_task_no_project(name)
+    origin = f"needs you: {name} {_f(f, 'kind')} {_f(f, 'item')}".strip()
+    kinds = _kinds(_config(core.get_project(conn, key)))
+    for t in core.list_tasks(conn, key):
+        if t["origin"] == origin and kinds.get(t["state"], "unknown") not in FINAL:
+            raise messages.make_task_exists(name, t["id"])
+    t = core.create_task(conn, key, _f(f, "title"), person(), goal=_f(f, "goal"), origin=origin)
+    return t["id"]
+
+
 def do_start(conn, f):
     tid = _f(f, "id")
     root = _ensure_startable(conn, tid)
@@ -411,17 +578,20 @@ def do_start(conn, f):
 
 ACTIONS = {"/a/state": do_state, "/a/mode": do_mode, "/a/force-release": do_force_release,
            "/a/pin": do_pin, "/a/comment": do_comment, "/a/create": do_create,
-           "/a/start": do_start, "/a/modes": do_modes}
+           "/a/start": do_start, "/a/modes": do_modes,
+           "/a/make-task": do_make_task}
 GET_ROUTES = [(re.compile(r"/"), "index"), (re.compile(r"/p/([^/]+)"), "project"),
               (re.compile(r"/p/([^/]+)/all"), "project_all"),
               (re.compile(r"/t/([^/]+)"), "task"),
+              (re.compile(r"/needs/([^/]+)"), "needs"),
               (re.compile(r"/modes"), "modes"), (re.compile(r"/api/modes"), "modes"),
               (re.compile(r"/api/index"), "index"),
               (re.compile(r"/api/project/([^/]+)"), "project"),
               (re.compile(r"/api/task/([^/]+)"), "task")]
 API = {"index": (api_index, page_index), "project": (api_project, page_project),
        "project_all": (api_project, lambda d: page_project(d, older=True)),
-       "task": (api_task, page_task), "modes": (api_modes, page_modes)}
+       "task": (api_task, page_task), "modes": (api_modes, page_modes),
+       "needs": (api_needs, page_needs)}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -468,6 +638,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("Host") not in self._allowed():
             return self._plain(403, "Forbidden host")
         path = urlsplit(self.path).path
+        _fresh["now"] = "fresh=1" in urlsplit(self.path).query
         if path.startswith("/static/"):
             return self._static(path[len("/static/"):])
         for rx, name in GET_ROUTES:
@@ -573,8 +744,25 @@ class Handler(BaseHTTPRequestHandler):
         return page_error(error, _next(form) or (f"/t/{tid}" if tid else "/"))
 
 
+class _BoardServer(ThreadingHTTPServer):
+    # On Windows SO_REUSEADDR lets a second process bind a port that is already
+    # in use; ask for exclusive use there so a second board is refused.
+    allow_reuse_address = sys.platform != "win32"
+
+    def server_bind(self):
+        if sys.platform == "win32":
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
 def make_server(port: int = 0, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), Handler)
+    try:
+        return _BoardServer((host, port), Handler)
+    except OSError as e:
+        if port and (e.errno in (errno.EADDRINUSE, errno.EACCES)
+                     or getattr(e, "winerror", None) in (10048, 10013)):
+            raise messages.board_port_taken(port) from e
+        raise
 
 
 def _expire(conn) -> None:

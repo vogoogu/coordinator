@@ -234,6 +234,22 @@ def go_waiting() -> list:
     return out
 
 
+# ------------------------------------------------------------------ learnings
+def unprocessed_learnings(inbox) -> dict | None:
+    """The skill's learnings inbox: how many files wait there, counting the files in
+    its day folders too. None when no folder is configured; "exists": False when it is
+    configured but missing. Only counts, never names or contents."""
+    if not inbox:
+        return None
+    root = Path(inbox)
+    if not root.is_dir():
+        return {"exists": False, "count": 0, "path": str(root)}
+    count = 0
+    for _dir, _sub, files in os.walk(root):
+        count += sum(1 for f in files if not f.startswith("."))
+    return {"exists": True, "count": count, "path": str(root)}
+
+
 # ------------------------------------------------------------------ switching a mode
 class Job:
     """One `mode.py set` call in the background."""
