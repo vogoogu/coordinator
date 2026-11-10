@@ -14,7 +14,7 @@ from urllib.parse import urlencode
 
 os.environ.setdefault("COORDINATOR_NOTIFY_SINK", os.devnull)
 
-from coordinator import board, core, db, launcher, pages  # noqa: E402
+from coordinator import board, core, db, launcher, pages, sources  # noqa: E402
 
 PERSON = core.Actor("person", "daria")
 
@@ -29,6 +29,8 @@ class BoardBase(unittest.TestCase):
         os.environ["ANTSON_STATE_DIR"] = os.path.join(self.tmp, "antson")      # never the real ~/.antson
         os.environ["COORDINATOR_GUARD_MODE_PY"] = os.path.join(self.tmp, "no-mode.py")
         self.addCleanup(self._restore)
+        board._outside["data"] = None            # the sources cache is per process
+        sources.forget()
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
         self.roots = {}

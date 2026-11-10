@@ -2,6 +2,7 @@
 Wording and look decisions live here and in web/; the data and the actions live in board.py."""
 import json
 import re
+from urllib.parse import quote
 from datetime import datetime, timedelta
 from html import escape
 from pathlib import Path
@@ -152,6 +153,12 @@ def _need_row(i: dict, token: str, now: datetime) -> Raw:
 def _project_card(p: dict, items: list, token: str, now: datetime) -> Raw:
     tone, status_icon, status = PROJECT_LOOK[p["tone"]]
     rows = [_need_row(i, token, now) for i in items[:INDEX_ROWS]]
+    wiki = p.get("wiki")
+    if wiki:
+        rows.append(_out_rows(wiki, token, "/"))
+        if wiki["me_count"] > OUT_ROWS:
+            rows.append(Raw(f'<a class="more" href="/needs/{quote(wiki["name"], safe="")}">'
+                            f'{wiki["me_count"] - OUT_ROWS} more from the wiki</a>'))
     if len(items) > INDEX_ROWS:
         rows.append(render("_card_more.html", key=p["key"],
                            text=f"{len(items) - INDEX_ROWS} more on the board"))
@@ -167,7 +174,8 @@ def _project_card(p: dict, items: list, token: str, now: datetime) -> Raw:
                    else "No chat working")
     count = p["needs_count"]
     return render("_project_card.html", tone=f"{tone}", key=p["key"],
-                  name=p["name"] or p["key"], monogram=monogram(p["name"] or p["key"]),
+                  name=p["name"] or p["key"],
+                  monogram=_logo(p["key"]) or _logo((wiki or {}).get("name", "")) or monogram(p["name"] or p["key"]),
                   tint=_tint(p["key"]), status_icon=icon(status_icon), status=status,
                   count=count, count_class="" if count else "zero",
                   count_word="needs you" if count == 1 else "need you",
@@ -220,31 +228,199 @@ def _guard_card(g: dict, now: datetime) -> Raw:
                   icon_chevron=icon("chevron-right"))
 
 
+# ------------------------------------------------------------------ needs from outside
+OUT_ROWS = 5                  # items per card on the index; the card's own page shows all
+LOGOS = {"kmu": "logo-kmu.png", "real": "logo-real.png", "antson": "logo-beta.png"}
+KINDS = {  # kind -> (label, meaning): the words the Daybook used
+    "conflict": ("Sources disagree", "Two sources say different things about the same fact. You decide which is right, ask the client, or dismiss it."),
+    "fork": ("Decision needed", "A choice the documents do not settle. Answer it, or put it to the client or an Antson expert."),
+    "suggestion": ("Idea from the analyst", "A suggestion for the solution, based on what the client wished for. Accept, change or reject it."),
+    "new_file": ("New document not read yet", "A file in raw/ has not been read into the knowledge base yet."),
+    "ingest_interrupted": ("Import interrupted", "Reading the documents stopped half way. Continue it so nothing is missing."),
+    "change_open": ("Change decided, not built", "You decided this change. Hand it to the desk so it gets built in Antson."),
+    "change_queued": ("Change with the desk", "The desk has this change and will make it after your approval."),
+    "change_manual": ("Change for you to do by hand", "No automatic action can do this change. Do it in the Antson editor yourself."),
+    "waiting_publish": ("Saved, not published", "The change is saved in Antson but not live. Publish it yourself when you are happy with it."),
+    "waiting_approve": ("Mail plan to approve", "The desk read a mail and made a plan. Approve it, or skip it."),
+    "approved": ("Approved", "Approved. The desk still has to run its ready check."),
+    "plan_missing": ("No plan yet", "The desk has no plan for this change yet."),
+    "waiting_go": ("Waiting for your GO", "Approved and checked. Say GO and the desk makes the change in Antson."),
+    "needs_action": ("Needs a new tool", "No approved action can do this change yet. It needs a new action first, or you do it by hand."),
+    "executing": ("Being changed now", "The desk is making this change right now."),
+    "mail_question": ("Customer question", "The customer asked something in a mail. Answer it yourself; a draft is shown if the desk prepared one."),
+    "mail_unreadable": ("Attachment not readable", "The desk could not read this attachment (it may be empty or damaged). Ask for it again or open the original."),
+    "ingest_running": ("Ingest running", "New material is being read into this project right now. Wait until it ends before you run /ingest here."),
+    "update_answer": ("Update conflicts", "A prepared improvement disagrees with what the skill says today. Keep the skill as it is or change it."),
+    "update_go": ("Update waits for you", "An improvement is prepared. Look at it, then say GO and the desk applies it to the repo."),
+    "update_applied": ("Applied, not released", "The improvement is in the repo but colleagues do not have it yet. Upload the new version, then say released."),
+    "update_failed": ("Update failed", "An improvement could not be applied: tests failed or the owner is needed. Look at it."),
+    "failed": ("Change failed", "The desk could not finish this change. Look at it before anything else."),
+    "unrouted": ("Mail without a project", "The desk could not tell which project this mail belongs to. Tell it which one."),
+    "digest-item": ("Feedback to decide", "Feedback from a colleague about the template or a skill. Do it, reject it, park it, or ask."),
+    "handover": ("Feedback fix on its way", "A feedback fix was handed over to the template. Check how far it is."),
+}
+KINDS["fork_count"], KINDS["conflict_count"] = KINDS["fork"], KINDS["conflict"]
+KINDS["suggestion_count"], KINDS["new_file_count"] = KINDS["suggestion"], KINDS["new_file"]
+GROUPS = (("me", "Waiting for me"), ("others", "Waiting for others"), ("build", "Build state"))
+CARD_NAMES = {"desk": "Mail desk", "unrouted": "Unrouted mails"}
+
+
+def _days(age) -> str:
+    n = int(age)
+    return "today" if n < 1 else "1 day" if n == 1 else f"{n} days"
+
+
+def _item_age(i: dict) -> str:
+    if i["age_days"] is None:
+        return "no date"
+    text = _days(i["age_days"])
+    if i["since_exact"]:
+        return text
+    return "today (date estimated)" if text == "today" else f"about {text} (date estimated)"
+
+
+def _logo(name: str, fixed: bool = False):
+    f = LOGOS.get("antson" if fixed else (name or "").lower())
+    return Raw(f'<img src="/static/{f}" alt="{escape(name)} logo">') if f else None
+
+
+def _out_item(i: dict, card: dict, token: str, here: str) -> Raw:
+    label, meaning = KINDS.get(i["kind"], (i["kind"], ""))
+    tone = {"red": "red", "amber": "amb"}.get(i["level"], "k-wait")
+    chips = [f'<span class="chip {escape(c["tone"])}">{escape(c["label"])}: {escape(c["value"])}</span>'
+             for c in i["labels"]]
+    if i["risk"]:
+        chips.append(f'<span class="chip">Risk: {escape(i["risk"])}</span>')
+    if i["sender"] or i["sent"]:
+        when = i["sent"][8:10] + "." + i["sent"][5:7] + "." if i["sent"] else ""
+        who = " · ".join(x for x in ((f"from {i['sender']}" if i["sender"] else ""), when) if x)
+        chips.append(f'<span class="chip">{escape(who)}</span>')
+    chips = Raw('<span class="chips">' + "".join(chips) + "</span>" if chips else "")
+    quotes = Raw("".join(
+        f'<blockquote class="qt"><b>{escape(q["label"])}</b><i>{escape(q["source"])}</i>{escape(q["text"])}</blockquote>'
+        for q in i["quotes"]))
+    expl = Raw(f'<div class="dt">{escape(i["explanation"])}</div>' if i["explanation"] else "")
+    how = (render("_out_how.html", text=i["how_to_act"], icon_copy=icon("copy")) if i["how_to_act"] else Raw(""))
+    make = render("_out_make.html", token_field=_token_field(token), name=card["name"], key=card["key"] or "",
+                  kind=i["kind"], id=i["id"], title=i["title"], goal=i["explanation"], next=here,
+                  icon_plus=icon("plus"), disabled=Raw("" if card["key"] else " disabled"),
+                  hint=Raw("" if card["key"] else '<span class="hint">This project is not registered in the coordinator.</span>'))
+    return render("_out_item.html", tone=tone, meaning=meaning, label=label, chips=chips,
+                  agecls=i["level"] if i["level"] != "none" else "", age=_item_age(i), id=i["id"],
+                  title=i["title"], explanation=expl, quotes=quotes, how=how, make=make)
+
+
+def _out_rows(card: dict, token: str, here: str, limit=OUT_ROWS) -> Raw:
+    me = [i for i in card["items"] if i["group"] == "me"]
+    notes = [render("_out_note.html", level=n["level"], text=n["text"]) for n in card["notes"]]
+    return Raw("".join(notes) + "".join(_out_item(i, card, token, here) for i in me[:limit]))
+
+
+def _learnings_row(l) -> Raw:
+    if not l or (l["exists"] and not l["count"]):
+        return Raw("")
+    if not l["exists"]:
+        return render("_out_note.html", level="amber", text=f"learnings folder not found: {l['path']}")
+    n = l["count"]
+    return render("_need_row.html", tone="k-wait", icon=icon("inbox"), label="Unprocessed learnings",
+                  age="", pin="", id="", title=f"{n} file{'s' if n != 1 else ''} in the learnings inbox",
+                  detail="Open the antson-helper project and type /learn.")
+
+
+def _out_count(card: dict, l) -> int:
+    return card["me_count"] + (1 if card.get("fixed") and l and l["exists"] and l["count"] else 0)
+
+
+def _out_card(card: dict, l, token: str) -> Raw:
+    tone, status_icon, status = PROJECT_LOOK[card["tone"]]
+    count = _out_count(card, l)
+    name = CARD_NAMES.get(card["name"], card["name"])
+    rows = Raw((str(_learnings_row(l)) if card.get("fixed") else "") + str(_out_rows(card, token, "/")))
+    more = card["me_count"] - OUT_ROWS
+    other = sum(1 for i in card["items"] if i["group"] != "me")
+    foot = (f"{more} more on the card's page" if more > 0
+            else f"{other} waiting for others or the build" if other else "Nothing else waiting")
+    return render("_out_card.html", tone=tone, anchor=quote(card["name"]), urlname=quote(card["name"], safe=""),
+                  name=name, mark=_logo(name, bool(card.get("fixed"))) or monogram(name), tint=_tint(card["name"]),
+                  status_icon=icon(status_icon), status=status, count=count, count_class="" if count else "zero",
+                  count_word="needs you" if count == 1 else "need you", rows=rows, foot=foot,
+                  icon_chevron=icon("chevron-right"))
+
+
+def _strip(out: dict, now: datetime) -> Raw:
+    parts = []
+    for f in out["strip"]:
+        if "text" in f:
+            val = f["text"]
+        elif "digest" in f:
+            val = f"last ran {f['digest'][:16].replace('T', ' ')}" if f["digest"] else "has not run yet"
+        elif not f["exists"]:
+            val = "folder not found"
+        elif not f["count"]:
+            val = "no files yet"
+        else:
+            days = (now - datetime.fromisoformat(f["newest"])).days if f["newest"] else None
+            when = "unknown" if days is None else "today" if days < 1 else f"{_days(days)} ago"
+            val = f"{f['count']} file{'s' if f['count'] != 1 else ''}, newest {when}"
+        parts.append(f"<span><b>{escape(f['name'])}</b>{escape(val)}</span>")
+    parts += [f"<span><b>Warning</b>{escape(w)}</span>" for w in out["warnings"]]
+    return render("_out_strip.html", items=Raw("".join(parts))) if parts else Raw("")
+
+
+def page_needs(d) -> Raw:
+    now = datetime.now().astimezone()
+    card, l = d["card"], d["learnings"]
+    name = CARD_NAMES.get(card["name"], card["name"])
+    here = "/needs/" + quote(card["name"], safe="")
+    notes = [render("_out_note.html", level=n["level"], text=n["text"]) for n in card["notes"]]
+    notes += [render("_out_note.html", level="amber", text=t) for t in card["health"]]
+    if card.get("fixed"):
+        notes.append(_learnings_row(l))
+    groups = []
+    for key, heading in GROUPS:
+        items = [i for i in card["items"] if i["group"] == key]
+        if items:
+            groups.append(render("_out_group.html", heading=heading, count=len(items),
+                                 rows=Raw("".join(_out_item(i, card, d["token"], here) for i in items))))
+    if not groups and not notes:
+        groups.append(render("_card_quiet.html", icon=icon("circle-check", "")))
+    return _page("needs.html", f"{name} · Needs you", d["token"], name=name, urlname=quote(card["name"], safe=""),
+                 mark=_logo(name, bool(card.get("fixed"))) or monogram(name), tint=_tint(card["name"]),
+                 updated=f"{now:%H:%M}", icon_back=icon("back"), icon_refresh=icon("refresh", ""),
+                 notes=Raw("".join(map(str, notes))), groups=Raw("".join(map(str, groups))))
+
+
 def page_index(d) -> Raw:
     now = datetime.now().astimezone()
     projects, needs = d["projects"], d["needs_you"]
     guard = d.get("guard") or {"needs": [], "new": 0}
+    out = d.get("outside") or {"cards": [], "strip": [], "learnings": None, "warnings": []}
     by_project = {}
     for i in needs:
         by_project.setdefault(i["project"], []).append(i)
+    own = [_out_card(c, out["learnings"], d["token"]) for c in out["cards"]]
     cards = Raw(("".join([_guard_card(guard, now)]) if guard["needs"] or guard["new"] else "")
                 + "".join(_project_card(p, by_project.get(p["key"], []), d["token"], now)
-                          for p in projects))
+                          for p in projects) + "".join(own))
     g = len(guard["needs"])
-    total, n = len(needs) + g, len(projects)
-    if not projects and not total:
+    wiki_n = sum(p["wiki"]["me_count"] for p in projects if p.get("wiki"))
+    outside_n = sum(_out_count(c, out["learnings"]) for c in out["cards"])
+    total, n = len(needs) + g + wiki_n + outside_n, len(projects)
+    if not projects and not total and not own:
         summary = render("_index_empty.html", icon=icon("folder", "lg"))
     elif not total:
-        quiet = "Your project is quiet." if n == 1 else f"All {n} projects are quiet."
+        quiet = "Your project is quiet." if n == 1 and not own else f"All {n + len(own)} projects are quiet."
         summary = render("_index_quiet.html", icon=icon("circle-check", "lg"), text=quiet)
     else:
-        busy = sum(1 for p in projects if p["needs_count"])
+        busy = sum(1 for p in projects if p["needs_count"]) + sum(1 for c in out["cards"] if _out_count(c, out["learnings"]))
+        n += len(out["cards"])
         summary = render("_index_heading.html",
                          headline="1 thing needs you" if total == 1
                          else f"{total} things need you",
                          where=(f"in {busy} of {n} project{'s' if n != 1 else ''}"
                                 + (" and the mode guard" if g else "") if busy or not g
                                 else "in the mode guard"))
+    summary = Raw(str(summary) + str(_strip(out, now)))
     return _page("index.html", "Coordinator", d["token"],
                  date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
                  updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),

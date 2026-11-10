@@ -449,3 +449,20 @@ table.modes .act{display:flex;gap:6px}
 .mg-f form,.mg form{margin:0}
 .newtag{margin-left:8px;display:inline-block;padding:0 8px;border-radius:var(--r-pill);font-size:12px;font-weight:600;background:var(--k-hand-c);color:var(--k-hand-t)}
 .pc-f .muted{font-size:13px}
+
+/* needs from outside (wikis, feedback, desk) */
+.mark img{display:block;width:100%;height:100%;border-radius:inherit;object-fit:cover}
+.irow.out .chips{display:inline-flex;gap:6px;flex-wrap:wrap}
+.chip{display:inline-block;padding:1px 8px;border-radius:var(--r-pill);font-size:12px;background:var(--chip);color:var(--sec)}
+.chip.info{background:var(--k-act-c);color:var(--k-act-t)}.chip.warn{background:var(--amb-bg);color:var(--amb-d)}.chip.alert{background:var(--red-bg);color:var(--red-t)}
+.irow .age.amber{color:var(--amb-d);font-weight:600}.irow .age.red{color:var(--red-t);font-weight:600}
+.irow .qt{margin:0;padding:6px 10px;border-left:3px solid var(--line-strong);font-size:12.5px;color:var(--sec);overflow-wrap:anywhere}
+.irow .qt b{font-weight:600;margin-right:6px}.irow .qt i{font-style:normal;color:var(--muted);margin-right:6px}
+.irow .how{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.irow .how .hw{font-family:var(--mono);font-size:12px;background:var(--chip);border-radius:var(--r-xs);padding:3px 8px;overflow-wrap:anywhere}
+.irow .mk{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.irow .mk .hint{font-size:12px;color:var(--muted)}
+.outstrip{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:13px;color:var(--muted)}
+.outstrip b{color:var(--sec);font-weight:600;margin-right:4px}
+.og{padding:6px 18px 10px}.og .gh{font-size:15px;font-weight:650;padding:12px 0 2px}
+.og .irow:first-child{border-top:0}
