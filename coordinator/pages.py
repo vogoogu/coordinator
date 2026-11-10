@@ -174,16 +174,65 @@ def _project_card(p: dict, items: list, token: str, now: datetime) -> Raw:
                   body=body, chats=chats, icon_chevron=icon("chevron-right"))
 
 
+def _guard_chat(c: dict) -> str:
+    """"chat TRIAL-1 (Title)" when the coordinator knows the session, else "chat fc0d"."""
+    if c["task"]:
+        return f"chat {c['task']} ({c['title']})" if c["title"] else f"chat {c['task']}"
+    return f"chat {_short(c['session'])}"
+
+
+def _guard_row(n: dict, now: datetime) -> Raw:
+    """One "Needs you" row of the mode guard. The wording lives here."""
+    age = _age(n["since"], now) if n.get("since") else ""
+    kind = n["kind"]
+    if kind == "hash":
+        return render("_guard_row.html", tone="red", icon=icon("warn"), label="Mode file", age=age,
+                      title="Mode file changed outside the switch",
+                      detail="modes.json is not what the last logged write produced. "
+                             "Find out who changed it before you raise anything.")
+    chat = _guard_chat(n["chat"])
+    if kind == "go":
+        steps = ", ".join(f"{i['n']}. {i['what']} (form {i['form']})" if i["form"]
+                          else f"{i['n']}. {i['what']}" for i in n["items"])
+        nums = ", ".join(str(i["n"]) for i in n["items"])
+        return render("_guard_row.html", tone="amb", icon=icon("unlock"), label="Waiting for go",
+                      age=age, title=f"{chat} waits for your go: {steps}",
+                      detail=f"Answer in that chat with: go {nums}")
+    return render("_guard_row.html", tone="red", icon=icon("blocked"), label="Ready check refused",
+                  age=age, title=f"{chat}: ready check for form {n['form']} was refused",
+                  detail="Reason: " + ", ".join(n["reasons"]))
+
+
+def _guard_card(g: dict, now: datetime) -> Raw:
+    needs = g["needs"]
+    tone = ("red" if any(n["tone"] == "red" for n in needs)
+            else "amber" if needs or g["new"] else "green")
+    pill, status_icon, status = PROJECT_LOOK[tone]
+    rows = [_guard_row(n, now) for n in needs]
+    count = len(needs)
+    new = g["new"]
+    return render("_guard_card.html", tone=pill, icon_mark=Raw(icon("sliders", "")),
+                  status_icon=icon(status_icon), status=status, count=count,
+                  count_class="" if count else "zero",
+                  count_word="needs you" if count == 1 else "need you",
+                  rows=Raw("".join(rows)),
+                  new_text=(f"{_plural(new, 'new item')} from chats" if new else "Nothing new"),
+                  icon_chevron=icon("chevron-right"))
+
+
 def page_index(d) -> Raw:
     now = datetime.now().astimezone()
     projects, needs = d["projects"], d["needs_you"]
+    guard = d.get("guard") or {"needs": [], "new": 0}
     by_project = {}
     for i in needs:
         by_project.setdefault(i["project"], []).append(i)
-    cards = Raw("".join(_project_card(p, by_project.get(p["key"], []), d["token"], now)
-                        for p in projects))
-    total, n = len(needs), len(projects)
-    if not projects:
+    cards = Raw(("".join([_guard_card(guard, now)]) if guard["needs"] or guard["new"] else "")
+                + "".join(_project_card(p, by_project.get(p["key"], []), d["token"], now)
+                          for p in projects))
+    g = len(guard["needs"])
+    total, n = len(needs) + g, len(projects)
+    if not projects and not total:
         summary = render("_index_empty.html", icon=icon("folder", "lg"))
     elif not total:
         quiet = "Your project is quiet." if n == 1 else f"All {n} projects are quiet."
@@ -193,11 +242,12 @@ def page_index(d) -> Raw:
         summary = render("_index_heading.html",
                          headline="1 thing needs you" if total == 1
                          else f"{total} things need you",
-                         where=f"in {busy} of {n} project{'s' if n != 1 else ''}")
+                         where=(f"in {busy} of {n} project{'s' if n != 1 else ''}"
+                                + (" and the mode guard" if g else "")))
     return _page("index.html", "Coordinator", d["token"],
                  date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
                  updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),
-                 summary=summary, cards=cards)
+                 icon_modes=icon("sliders", ""), summary=summary, cards=cards)
 
 
 
@@ -250,7 +300,7 @@ def _now() -> datetime:
 
 def _head(now: datetime) -> dict:
     return {"updated": f"{now:%H:%M}", "icon_refresh": icon("refresh", ""),
-            "icon_back": icon("back", "")}
+            "icon_back": icon("back", ""), "icon_modes": icon("sliders", "")}
 
 
 def _from(c: dict, now: datetime) -> str:
@@ -583,6 +633,86 @@ def page_task(d, error=None) -> Raw:
                  notes=_notes(d, now), details=_details(t), timeline=timeline,
                  event_count=len(history), actions=_actions(d, error),
                  chats=chats, chat_count=len(claims), **_head(now))
+
+
+# ------------------------------------------------------------------ modes page
+MODE_LOOK = {"read": ("k-clo", "eye"), "prod": ("k-hand", "handover"), "dev": ("k-act", "pencil")}
+JOB_SHOWN = timedelta(minutes=10)   # how long the result of the last switch stays on the page
+
+
+def _job_note(job: dict, now: datetime) -> Raw:
+    if not job or now - _when(job["started"]) > JOB_SHOWN:
+        return Raw("")
+    ids, mode = ", ".join(job["ids"]), job["mode"]
+    if job["state"] == "waiting":
+        return render("_note.html", tone="info", icon=icon("info", ""),
+                      strong=f"Changing {ids} to {mode}.",
+                      text="If this raises a mode, answer the Yes/No window on your desktop. "
+                           "No answer after 60 s counts as No. This page refreshes itself.")
+    if job["error"]:
+        return render("_note.html", tone="red", icon=icon("warn", ""),
+                      strong="Nothing was changed.", text=job["error"])
+    parts = []
+    if job["changed"]:
+        parts.append(f"Changed: {', '.join(job['changed'])} to {mode}.")
+    if job["refused"]:
+        parts.append(f"Not changed: {', '.join(job['refused'])} ({job['reason'] or 'refused'}).")
+    if not parts:
+        parts.append(f"{ids} already {mode}.")
+    return render("_note.html", tone="amb" if job["refused"] else "grn",
+                  icon=icon("warn" if job["refused"] else "ok", ""),
+                  strong="Mode switch finished.", text=" ".join(parts))
+
+
+def _mode_buttons(r: dict) -> Raw:
+    return Raw("".join(render(
+        "_modes_btn.html", name="row", value=f"{r['id']}|{m}", label=m,
+        off=Raw(" disabled" if m == r["mode"] and not r["inherited"] else ""))
+        for m in ("read", "dev", "prod")))
+
+
+def _mode_row(r: dict) -> Raw:
+    cls, ic = MODE_LOOK.get(r["mode"], MODE_LOOK["read"])
+    inherited = Raw(' <span class="muted">(from form)</span>' if r["inherited"] else "")
+    kind = {"subform": "sub-form"}.get(r["kind"], r["kind"] if r["kind"] != "unknown" else "?")
+    return render("_modes_row.html", id=r["id"], indent=f"{10 + 18 * r['depth']}px",
+                  name=r["name"] or "(no name yet)", kind=kind, parent=r["parent"] or "",
+                  mode=render("_modes_mode.html", cls=cls, icon=icon(ic), mode=r["mode"],
+                              inh=inherited),
+                  new=Raw('<span class="newtag">new</span>' if r["new"] else ""),
+                  buttons=_mode_buttons(r))
+
+
+def page_modes(d) -> Raw:
+    now = _now()
+    notes = []
+    if not d["mode_py_ok"]:
+        notes.append(render("_note.html", tone="red", icon=icon("config-error", ""),
+                            strong="The switch was not found.",
+                            text=f"No mode.py at {d['mode_py']}. Set mode_py in antson.toml in the "
+                                 "coordinator folder, or COORDINATOR_GUARD_MODE_PY. "
+                                 "Changing modes does not work until then."))
+    if d["hash_ok"] is False:
+        notes.append(render("_note.html", tone="red", icon=icon("warn", ""),
+                            strong="Mode file changed outside the switch.",
+                            text="modes.json is not what the last logged write produced."))
+    notes.append(_job_note(d["job"], now))
+    groups = []
+    for g in d["groups"]:
+        anchor = "g-" + re.sub(r"[^A-Za-z0-9]+", "-", g["key"] or "none")
+        groups.append(render("_modes_group.html", anchor=anchor, token_field=_token_field(d["token"]),
+                             name=g["name"] or "Not assigned to a project",
+                             count=_plural(len(g["rows"]), "item"),
+                             rows=Raw("".join(_mode_row(r) for r in g["rows"])),
+                             bulk=Raw("".join(render("_modes_btn.html", name="mode", value=m,
+                                                     label=m, off="") for m in ("read", "dev", "prod")))))
+    waiting = bool(d["job"]) and d["job"]["state"] == "waiting"
+    return render("modes.html", title="Modes", icon_modes=icon("sliders", ""),
+                  refresh=Raw('<meta http-equiv="refresh" content="3">\n' if waiting else ""),
+                  notices=Raw("".join(notes)),
+                  groups=Raw("".join(groups)) if groups
+                  else render("_modes_empty.html", icon=icon("info", "")),
+                  **_head(now))
 
 
 def page_error(error, back="/") -> Raw:

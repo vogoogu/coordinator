@@ -217,3 +217,24 @@ def cannot_start(display_id, reason):
         f"Task {display_id} was not started.",
         reason,
         "Start only tasks in a waiting state that no chat holds; release it first if needed.")
+
+
+def modes_nothing_selected():
+    return CoordinatorError(
+        "No mode was changed.",
+        "No row was selected.",
+        "Tick the rows first, or use the buttons on a single row.")
+
+
+def modes_bad_request():
+    return CoordinatorError(
+        "No mode was changed.",
+        "The request names an unknown mode or an id that is not a form or interface id.",
+        "Use the buttons on the Modes page.")
+
+
+def modes_busy():
+    return CoordinatorError(
+        "No mode was changed.",
+        "An earlier change is still waiting for your answer in its window.",
+        "Answer the window on your desktop (Yes or No), or wait for it to time out after 60 s.")

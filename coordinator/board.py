@@ -11,8 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
-from . import config, core, db, launcher, messages, notify, paths
-from .pages import page_error, page_index, page_project, page_task
+from . import antson, config, core, db, launcher, messages, notify, paths
+from .pages import page_error, page_index, page_modes, page_project, page_task
 
 WEB_DIR = Path(__file__).parent / "web"
 STATIC_DIR = WEB_DIR / "static"
@@ -153,7 +153,103 @@ def api_index(conn) -> dict:
                                  (p["name"] or p["key"]).lower()))
     return {"token": core.board_token(conn),
             "enforcement": core.get_setting(conn, "enforcement", "warn"),
-            "projects": projects, "needs_you": needs}
+            "projects": projects, "needs_you": needs, "guard": _guard(conn)}
+
+
+# ------------------------------------------------------------------ modes (Antson guard)
+def _chat(conn, session: str) -> dict:
+    """The chat behind a guard session id, with its task if the coordinator knows it."""
+    t = core.session_task(conn, session) or {}
+    return {"session": session, "task": t.get("task", ""), "title": t.get("title", "")}
+
+
+def _guard(conn) -> dict:
+    """What the guard needs from Daria, for "Needs you": the mode file changed outside
+    the switch, a chat waiting for her go, a refused ready check. `new` counts items
+    chats opened or created that have no mode of her own yet."""
+    needs = []
+    if antson.hash_ok() is False:
+        needs.append({"kind": "hash", "tone": "red"})
+    for w in antson.go_waiting():
+        needs.append({**w, "tone": "amber" if w["kind"] == "go" else "red",
+                      "chat": _chat(conn, w["session"])})
+    return {"needs": needs,
+            "new": sum(r["new"] for g in _mode_groups(conn) for r in g["rows"])}
+
+
+def _mode_groups(conn) -> list:
+    """Modes per project: [{"key", "name", "rows": [...]}]. A row is one form, sub-form
+    or interface from modes.json or from a chat's report. Rows are "new" when only a
+    report knows them, or when a chat registered them and Daria has not set them."""
+    items, reports = antson.load_modes(), antson.read_reports()
+    coord = {p["key"].upper(): p for p in core.list_projects(conn)}
+
+    def project_of(rid, it, rep):
+        if it.get("project"):
+            return str(it["project"])
+        parent = str(it.get("parent") or rep.get("parent") or "")
+        if parent and items.get(parent, {}).get("project"):
+            return str(items[parent]["project"])
+        sid = rep.get("session") or str(it.get("set_by") or "").removeprefix("chat:")
+        t = core.session_task(conn, sid) if sid else None
+        return t["project"] if t else ""
+
+    rows = {}
+    for rid in list(items) + [r for r in reports if r not in items]:
+        it, rep = items.get(rid, {}), reports.get(rid, {})
+        kind = it.get("kind") if it.get("kind") not in (None, "unknown") else rep.get("kind")
+        name = it.get("name") if it.get("name") not in (None, "", rid) else rep.get("name")
+        parent = it.get("parent") or rep.get("parent")
+        mode, inherited = antson.effective(rid, items)
+        rows[rid] = {"id": rid, "kind": kind or "unknown", "name": name or "",
+                     "parent": str(parent) if parent else "", "mode": mode,
+                     "inherited": inherited,
+                     "new": not it or bool(it.get("new")
+                                           and it.get("set_by") not in ("daria", "board")),
+                     "project": project_of(rid, it, rep)}
+    groups = {}
+    for r in rows.values():
+        groups.setdefault(r["project"].upper(), {"key": r["project"], "rows": []})["rows"].append(r)
+    out = []
+    for gk, g in sorted(groups.items(), key=lambda kv: (kv[0] == "", kv[0])):
+        p = coord.get(gk)
+        out.append({"key": g["key"], "name": (p["name"] or p["key"]) if p else g["key"],
+                    "rows": _tree(g["rows"])})
+    return out
+
+
+def _tree(rows: list) -> list:
+    """Forms first, each followed by what belongs to it (depth 1, 2, ...)."""
+    def num(r):
+        return (0, int(r["id"]), "") if r["id"].isdigit() else (1, 0, r["id"])
+    ids = {r["id"] for r in rows}
+    kids = {}
+    for r in sorted(rows, key=num):
+        top = r["parent"] if r["parent"] in ids and r["parent"] != r["id"] else ""
+        kids.setdefault(top, []).append(r)
+    out, seen = [], set()
+
+    def walk(parent, depth):
+        for r in kids.get(parent, []):
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                out.append({**r, "depth": depth})
+                walk(r["id"], depth + 1)
+    walk("", 0)
+    out.extend({**r, "depth": 0} for r in rows if r["id"] not in seen)   # a parent cycle
+    return out
+
+
+def api_modes(conn) -> dict:
+    job = antson.current_job()
+    return {"token": core.board_token(conn), "groups": _mode_groups(conn),
+            "mode_py": antson.mode_py_path(),
+            "mode_py_ok": Path(antson.mode_py_path()).is_file(),
+            "hash_ok": antson.hash_ok(),
+            "job": ({"state": job.state, "ids": job.ids, "mode": job.mode,
+                     "started": job.started, "changed": job.changed,
+                     "refused": job.refused, "reason": job.reason, "error": job.error}
+                    if job else None)}
 
 
 def api_project(conn, key: str) -> dict:
@@ -283,6 +379,26 @@ def do_create(conn, f):
     return t["id"]
 
 
+def do_modes(conn, f):
+    """Start `mode.py set` in the background (one row button, or the selected rows).
+    The board never writes modes.json and never answers the confirmation window."""
+    row = _f(f, "row")
+    if row:
+        rid, _, mode = row.partition("|")
+        ids = [rid]
+    else:
+        ids, mode = f.get("ids", []), _f(f, "mode")
+    if not ids:
+        raise messages.modes_nothing_selected()
+    try:
+        antson.start_set(ids, mode)
+    except ValueError:
+        raise messages.modes_bad_request() from None
+    except RuntimeError:
+        raise messages.modes_busy() from None
+    return ""
+
+
 def do_start(conn, f):
     tid = _f(f, "id")
     root = _ensure_startable(conn, tid)
@@ -295,16 +411,17 @@ def do_start(conn, f):
 
 ACTIONS = {"/a/state": do_state, "/a/mode": do_mode, "/a/force-release": do_force_release,
            "/a/pin": do_pin, "/a/comment": do_comment, "/a/create": do_create,
-           "/a/start": do_start}
+           "/a/start": do_start, "/a/modes": do_modes}
 GET_ROUTES = [(re.compile(r"/"), "index"), (re.compile(r"/p/([^/]+)"), "project"),
               (re.compile(r"/p/([^/]+)/all"), "project_all"),
               (re.compile(r"/t/([^/]+)"), "task"),
+              (re.compile(r"/modes"), "modes"), (re.compile(r"/api/modes"), "modes"),
               (re.compile(r"/api/index"), "index"),
               (re.compile(r"/api/project/([^/]+)"), "project"),
               (re.compile(r"/api/task/([^/]+)"), "task")]
 API = {"index": (api_index, page_index), "project": (api_project, page_project),
        "project_all": (api_project, lambda d: page_project(d, older=True)),
-       "task": (api_task, page_task)}
+       "task": (api_task, page_task), "modes": (api_modes, page_modes)}
 
 
 class Handler(BaseHTTPRequestHandler):

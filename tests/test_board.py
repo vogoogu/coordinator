@@ -25,6 +25,9 @@ class BoardTest(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self._old = os.environ.get("COORDINATOR_HOME")
         os.environ["COORDINATOR_HOME"] = os.path.join(self.tmp, "home")
+        self._env = {k: os.environ.get(k) for k in ("ANTSON_STATE_DIR", "COORDINATOR_GUARD_MODE_PY")}
+        os.environ["ANTSON_STATE_DIR"] = os.path.join(self.tmp, "antson")      # never the real ~/.antson
+        os.environ["COORDINATOR_GUARD_MODE_PY"] = os.path.join(self.tmp, "no-mode.py")
         self.addCleanup(self._restore)
         self.conn = db.connect()
         self.addCleanup(self.conn.close)
@@ -44,6 +47,11 @@ class BoardTest(unittest.TestCase):
         self.thread.join(5)
 
     def _restore(self):
+        for k, v in self._env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         if self._old is None:
             os.environ.pop("COORDINATOR_HOME", None)
         else:

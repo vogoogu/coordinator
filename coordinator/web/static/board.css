@@ -432,3 +432,20 @@ pre.errbox{margin:0;white-space:pre-wrap}
   .page{zoom:var(--zoom)}
   .page{min-height:calc(100vh / var(--zoom))}
 }
+
+/* modes page and the guard card on the index */
+.mg{padding:18px 20px 14px}
+.mg-h{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.mg-h h2{font-size:17px;margin:0}
+.tbl{overflow-x:auto}
+table.modes{width:100%;border-collapse:collapse;font-size:13.5px}
+table.modes th{text-align:left;font-size:12px;font-weight:600;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line)}
+table.modes td{padding:8px 10px;border-top:1px solid var(--line-soft);vertical-align:middle}
+table.modes .ck{width:34px}
+table.modes .mid{font-size:12.5px}
+table.modes .mono{font-family:var(--mono);font-size:12.5px}
+table.modes .act{display:flex;gap:6px}
+.mg-f{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft);font-size:13px;color:var(--sec)}
+.mg-f form,.mg form{margin:0}
+.newtag{margin-left:8px;display:inline-block;padding:0 8px;border-radius:var(--r-pill);font-size:12px;font-weight:600;background:var(--k-hand-c);color:var(--k-hand-t)}
+.pc-f .muted{font-size:13px}

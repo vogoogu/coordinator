@@ -770,6 +770,16 @@ def live_claims(conn) -> dict:
     return {r["display_id"]: dict(r) for r in _live_claim_rows(conn)}
 
 
+def session_task(conn, session_id: str) -> dict | None:
+    """The task a chat session claimed most recently: {"task", "title", "project"} or
+    None if the coordinator does not know the session. Read only."""
+    row = conn.execute(
+        "SELECT p.key AS project, p.key || '-' || t.number AS task, t.title AS title"
+        " FROM claim c JOIN task t ON t.id = c.task_id JOIN project p ON p.id = t.project_id"
+        " WHERE c.session_id = ? ORDER BY c.id DESC LIMIT 1", (session_id,)).fetchone()
+    return dict(row) if row else None
+
+
 def get_session_stat(conn, session_id: str) -> dict | None:
     """What a chat session last did (tool, path, time); None if it never did anything."""
     row = conn.execute("SELECT * FROM session_stat WHERE session_id = ?",
