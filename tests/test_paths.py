@@ -30,6 +30,59 @@ class PathsTest(unittest.TestCase):
         self.assertEqual(h, Path(os.environ["COORDINATOR_HOME"]))
         self.assertTrue(h.is_dir())
 
+    def _fake_home(self):
+        """USERPROFILE and LOCALAPPDATA in a temp folder; COORDINATOR_HOME unset."""
+        user = self.make_dir("user")
+        local = self.make_dir("user", "AppData", "Local")
+        for k, v in (("USERPROFILE", user), ("HOME", user), ("LOCALAPPDATA", local)):
+            old = os.environ.get(k)
+            os.environ[k] = v
+            self.addCleanup(os.environ.pop if old is None else os.environ.__setitem__,
+                            *((k,) if old is None else (k, old)))
+        old = os.environ.pop("COORDINATOR_HOME")
+        self.addCleanup(os.environ.__setitem__, "COORDINATOR_HOME", old)
+        return Path(user), Path(local)
+
+    def test_default_home_is_dot_coordinator_and_copies_old_folder_once(self):
+        import sqlite3
+        user, local = self._fake_home()
+        old = local / "coordinator"
+        (old / "backups").mkdir(parents=True)
+        (old / "backups" / "x.db").write_text("b", encoding="utf-8")
+        (old / "notify.toml").write_text("enabled = false", encoding="utf-8")
+        c = sqlite3.connect(old / "coordinator.db")
+        c.execute("CREATE TABLE t (v)")
+        c.execute("INSERT INTO t VALUES ('kept')")
+        c.commit()
+        c.close()
+        home = paths.app_home()
+        self.assertEqual(home, user / ".coordinator")
+        self.assertEqual((home / "notify.toml").read_text(encoding="utf-8"), "enabled = false")
+        self.assertTrue((home / "backups" / "x.db").is_file())
+        c = sqlite3.connect(home / "coordinator.db")
+        self.assertEqual(c.execute("SELECT v FROM t").fetchone()[0], "kept")
+        c.close()
+        self.assertTrue((old / "coordinator.db").is_file(), "the old folder stays")
+        # once only: a later change in the old folder is not copied again
+        (old / "notify.toml").write_text("enabled = true", encoding="utf-8")
+        paths.app_home()
+        self.assertEqual((home / "notify.toml").read_text(encoding="utf-8"), "enabled = false")
+        self.assertEqual([p.name for p in user.iterdir() if "copy" in p.name], [])
+
+    def test_default_home_without_old_folder_starts_empty(self):
+        user, _ = self._fake_home()
+        self.assertEqual(list(paths.app_home().iterdir()), [])
+
+    def test_antson_state_dir_default_and_override(self):
+        user, _ = self._fake_home()
+        old = os.environ.pop("ANTSON_STATE_DIR", None)
+        self.addCleanup(lambda: old is None or os.environ.__setitem__("ANTSON_STATE_DIR", old))
+        self.assertEqual(paths.antson_state_dir(), user / ".antson")
+        self.assertFalse((user / ".antson").exists(), "reading the path creates nothing")
+        os.environ["ANTSON_STATE_DIR"] = str(user / "x")
+        self.addCleanup(os.environ.pop, "ANTSON_STATE_DIR", None)
+        self.assertEqual(paths.antson_state_dir(), user / "x")
+
     def test_norm_case_and_slashes(self):
         self.assertEqual(paths.norm("C:/Temp/X"), paths.norm("c:\\temp\\x\\"))
 
