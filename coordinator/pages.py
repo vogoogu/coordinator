@@ -243,7 +243,8 @@ def page_index(d) -> Raw:
                          headline="1 thing needs you" if total == 1
                          else f"{total} things need you",
                          where=(f"in {busy} of {n} project{'s' if n != 1 else ''}"
-                                + (" and the mode guard" if g else "")))
+                                + (" and the mode guard" if g else "") if busy or not g
+                                else "in the mode guard"))
     return _page("index.html", "Coordinator", d["token"],
                  date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
                  updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),
