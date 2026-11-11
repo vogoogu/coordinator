@@ -580,6 +580,28 @@ def reclaim_after_clear(conn, display_id, session_id, launch, transcript_path=""
     return _task_by_pk(conn, pk)
 
 
+def reclaim_after_answer(conn, session_id, transcript_path="", cwd="") -> dict | None:
+    """The person wrote to a chat that had asked a question (COORD-10). If the session's
+    last claim ended with "clarify" or "expired", its task is still in the project's
+    clarify state and nobody holds it, claim it again. Otherwise write nothing and
+    return None."""
+    if _live_claim_rows(conn, session_id=session_id):
+        return None
+    last = conn.execute(
+        "SELECT c.end_reason, p.key || '-' || t.number AS display_id FROM claim c"
+        " JOIN task t ON t.id = c.task_id JOIN project p ON p.id = t.project_id"
+        " WHERE c.session_id = ? ORDER BY c.id DESC LIMIT 1", (session_id,)).fetchone()
+    if last is None or last["end_reason"] not in ("clarify", "expired"):
+        return None
+    try:
+        task, cfg = _load(conn, last["display_id"])
+    except CoordinatorError:
+        return None
+    if task["state"] != cfg.on_clarify or _live_claim_rows(conn, task_pk=task["pk"]):
+        return None
+    return claim(conn, last["display_id"], session_id, transcript_path, cwd)
+
+
 def release(conn, display_id, session_id, outcome, note) -> dict:
     """Report on a claimed task: done / clarify end the claim, progress keeps it.
     The state moves only from an active state. If a person finished or closed the

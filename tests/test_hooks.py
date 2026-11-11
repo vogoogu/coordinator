@@ -461,6 +461,27 @@ class HooksTest(unittest.TestCase):
             self.assertEqual((r.exit_code, r.stdout, r.stderr), (0, "", ""))
         self.assertEqual(self.counts(), before)
 
+    # ----------------------------------------------------------------- prompt
+    def test_prompt_reclaims_after_a_question_and_says_so(self):     # COORD-10
+        tid = self.claimed()
+        core.release(self.conn, tid, "sess-1", "clarify", "which db?")
+        r = hooks.handle("prompt", {"session_id": "sess-1", "cwd": self.root,
+                                    "prompt": "sqlite"}, {})
+        self.assertEqual((r.exit_code, r.stderr), (0, ""))
+        self.assertIn(f"holds {tid} again", r.stdout)
+        self.assertEqual(core.claim_for_session(self.conn, "sess-1")["display_id"], tid)
+
+    def test_prompt_is_silent_otherwise(self):
+        tid = self.claimed()
+        before = self.counts()
+        r = hooks.handle("prompt", {"session_id": "sess-1", "cwd": self.root}, {})
+        self.assertEqual((r.exit_code, r.stdout), (0, ""))              # holds a live claim
+        r = hooks.handle("prompt", {"session_id": "nobody", "cwd": self.root}, {})
+        self.assertEqual((r.exit_code, r.stdout), (0, ""))
+        r = hooks.handle("prompt", {}, {})
+        self.assertEqual((r.exit_code, r.stdout), (0, ""))
+        self.assertEqual(self.counts(), before)
+
     # ------------------------------------------------------------ fail open
     def test_unknown_event_and_bad_payload_fail_open(self):
         for event, payload in (("nonsense", {}), ("stop", None), ("pre-tool", {})):

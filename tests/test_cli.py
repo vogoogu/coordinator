@@ -263,7 +263,8 @@ class CliTest(unittest.TestCase):
             self.assertIn(word, out)
         data = json.loads(out[out.index("{"):out.rindex("}") + 1])
         hooks = data["hooks"]
-        self.assertEqual(set(hooks), {"SessionStart", "PreToolUse", "PostToolUse", "Stop"})
+        self.assertEqual(set(hooks), {"SessionStart", "PreToolUse", "PostToolUse", "Stop",
+                                      "UserPromptSubmit"})
         self.assertEqual(hooks["PreToolUse"][0]["matcher"],
                          "Write|Edit|MultiEdit|NotebookEdit")
         post = hooks["PostToolUse"][0]["matcher"].split("|")

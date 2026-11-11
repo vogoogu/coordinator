@@ -20,6 +20,7 @@ HOOK_EVENTS = (
     ("PreToolUse", "Write|Edit|MultiEdit|NotebookEdit", "pre-tool"),
     ("PostToolUse", POST_TOOL_MATCHER, "post-tool"),
     ("Stop", None, "stop"),
+    ("UserPromptSubmit", None, "prompt"),
 )
 
 

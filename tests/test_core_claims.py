@@ -485,6 +485,37 @@ class CoreClaimsTest(unittest.TestCase):
         core.claim(self.conn, t["id"], "s1", launch="tok")
         self.assertEqual(core.get_task(self.conn, t["id"])["claims"][0]["launch"], "tok")
 
+    def test_answer_reclaims_after_clarify_or_expired_only(self):    # COORD-10
+        t = self.task()
+        core.claim(self.conn, t["id"], "s1")
+        core.release(self.conn, t["id"], "s1", "clarify", "which db?")
+        r = core.reclaim_after_answer(self.conn, "s1", "tp", "cwd")
+        self.assertEqual((r["id"], r["state"]), (t["id"], "building"))
+        self.assertEqual(core.claim_for_session(self.conn, "s1")["display_id"], t["id"])
+        self.assertIsNone(core.reclaim_after_answer(self.conn, "s1"))     # already holds it
+        core.release(self.conn, t["id"], "s1", "done", "x")
+        self.assertIsNone(core.reclaim_after_answer(self.conn, "s1"))     # ended with done
+        u = self.task()
+        core.claim(self.conn, u["id"], "s2")
+        core.expire_leases(self.conn, now=datetime.now(timezone.utc) + timedelta(hours=2))
+        self.assertEqual(core.get_task(self.conn, u["id"])["state"], "clarify")
+        self.assertEqual(core.reclaim_after_answer(self.conn, "s2")["id"], u["id"])
+
+    def test_answer_does_not_reclaim_a_task_someone_else_holds_or_moved_on(self):
+        a, b = self.task(), self.task()
+        core.claim(self.conn, a["id"], "s1")
+        core.release(self.conn, a["id"], "s1", "clarify", "q")
+        core.claim(self.conn, a["id"], "s9")                               # taken by another chat
+        self.assertIsNone(core.reclaim_after_answer(self.conn, "s1"))
+        core.claim(self.conn, b["id"], "s3")
+        core.release(self.conn, b["id"], "s3", "clarify", "q")
+        core.set_state(self.conn, b["id"], "open", PERSON)                 # person moved it on
+        self.assertIsNone(core.reclaim_after_answer(self.conn, "s3"))
+        core.claim(self.conn, b["id"], "s4")
+        core.release(self.conn, b["id"], "s4", "progress", "pause")
+        self.assertIsNone(core.reclaim_after_answer(self.conn, "s4"))      # progress is not a question
+        self.assertIsNone(core.reclaim_after_answer(self.conn, "never-claimed"))
+
     def test_reclaim_after_clear_moves_claim_to_new_session(self):
         t = self.task()
         core.claim(self.conn, t["id"], "s1", launch="tok")

@@ -1,7 +1,7 @@
 """Claude Code hooks: a thin front over core. Fails open: never crashes a session.
 
 Run as `python -m coordinator.hooks <event>` or `python <path>\\hooks.py <event>`
-with event in session-start, pre-tool, post-tool, stop. The hook payload is JSON
+with event in session-start, pre-tool, post-tool, stop, prompt. The hook payload is JSON
 on stdin."""
 import json
 import os
@@ -243,8 +243,26 @@ def _stop(conn, payload, env) -> HookResult:
         "progress (you are only pausing), with a short note.\n"))
 
 
+def _prompt(conn, payload, env) -> HookResult:
+    """The person wrote: a chat that asked a question takes its task back (COORD-10)."""
+    sid = payload.get("session_id") or ""
+    if not sid:
+        return HookResult()
+    try:
+        task = core.reclaim_after_answer(conn, sid, payload.get("transcript_path") or "",
+                                         payload.get("cwd") or "")
+    except core.CoordinatorError:
+        return HookResult()
+    if not task:
+        return HookResult()
+    return HookResult(stdout=(
+        f"Coordinator: you asked a question on {task['id']} and the person has written "
+        f"back, so this session holds {task['id']} again (state: {task['state']}). If the "
+        f"message is not about {task['id']}, call task_release with outcome progress.\n"))
+
+
 EVENTS = {"session-start": _session_start, "pre-tool": _pre_tool,
-          "post-tool": _post_tool, "stop": _stop}
+          "post-tool": _post_tool, "stop": _stop, "prompt": _prompt}
 
 
 def handle(event: str, payload: dict, env: dict) -> HookResult:

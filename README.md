@@ -184,6 +184,13 @@ and use the buttons under the table to set them in one call (one confirmation wi
 - Antson projects set `default_mode = "write"` in their `project.toml` and keep
   `modes = ["read", "write"]`: the modes of forms replace per-task modes there.
 
+## When you answer a question
+
+A chat that released its task with `clarify` (or lost it to the 30 minute lease) takes
+the task back when you write to it: the UserPromptSubmit hook (`hooks.py prompt`, printed by
+`install-help`) claims it again if the task is still in the clarify state and nobody
+holds it. If your message is about something else, the chat releases it with `progress`.
+
 ## Backlog ideas
 
 - **BACKLOG(home)**: since 2026-11-11 the home page lists only tasks that need clarification.
