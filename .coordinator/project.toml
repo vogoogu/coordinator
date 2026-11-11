@@ -1,0 +1,45 @@
+key = "COORD"            # required in each project file
+name = "Coordinator"
+default_mode = "write"
+modes = ["read", "write"]          # ordered: later = more rights
+on_done = "review"
+on_clarify = "clarify"
+
+[[states]]
+name = "open"
+label = "Open"
+kind = "waiting"
+
+[[states]]
+name = "ready"
+label = "Ready"
+kind = "waiting"
+requires = ["goal", "done_when", "scope"]
+
+[[states]]
+name = "building"
+label = "In work"
+kind = "active"
+
+[[states]]
+name = "clarify"
+label = "Needs clarification"
+kind = "handover"
+requires = ["note"]
+
+[[states]]
+name = "review"
+label = "To check"
+kind = "handover"
+requires = ["note"]
+
+[[states]]
+name = "done"
+label = "Done"
+kind = "finished"
+
+[[states]]
+name = "dropped"
+label = "Dropped"
+kind = "closed"
+requires = ["note"]
