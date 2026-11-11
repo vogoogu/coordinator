@@ -25,6 +25,9 @@ and show pop-ups.
 
 ## Set up on a new laptop
 
+Easiest: open this folder in Claude Code and say "set this up for me". It follows
+`docs/SETUP-GUIDE-FOR-CLAUDE.md` and asks before it changes anything. By hand:
+
 Each person has their own board and their own tasks; only the code is shared.
 Your tasks live in `%USERPROFILE%\.coordinator\` on your laptop, never in git.
 

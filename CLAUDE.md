@@ -2,6 +2,7 @@
 
 Router for Claude Code in this repo (a local task coordinator for Claude chats).
 User docs: README.md.
+Setting this up for a new person on a new laptop: follow `docs/SETUP-GUIDE-FOR-CLAUDE.md` step by step.
 
 ## Rules
 - Standard library only (Python 3.11+). No pip packages.
