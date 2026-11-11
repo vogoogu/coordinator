@@ -23,6 +23,43 @@ for example `Test-NetConnection 127.0.0.1 -Port 8790` in PowerShell. Don't load 
 page for that: every page request also expires stale leases, which can move tasks
 and show pop-ups.
 
+## Set up on a new laptop
+
+Each person has their own board and their own tasks; only the code is shared.
+Your tasks live in `%USERPROFILE%\.coordinator\` on your laptop, never in git.
+
+1. Install Python 3.11 or newer (the code uses `tomllib`) and git.
+2. Clone the repository (ask for its address) and stay on `main`:
+
+       git clone <repository address> C:\Projects\_coordinator
+
+3. Run `python -m coordinator install-help` from that folder. It prints a JSON
+   block and one `claude mcp add` line. You apply both yourself: merge the JSON
+   into `%USERPROFILE%\.claude\settings.json` and run the `claude mcp add` line
+   once. The program never changes your Claude Code settings.
+4. Optional, so the pop-up says "Coordinator": `python -m coordinator install-notify`.
+5. Register each project (one command per project):
+
+       python -m coordinator init-project <folder> --key KEY --name "Name"
+
+   For Antson projects then set `default_mode = "write"` in the `project.toml`
+   (see "Modes" below).
+6. Start the board: `python -m coordinator board`.
+
+Starting it at login is optional. To do it, make a shortcut to
+`python -m coordinator board --no-browser` and put it in your Startup folder
+(`shell:startup`). Nothing creates that shortcut for you.
+
+Without any further settings the board shows your registered projects, and for
+each project that has `tools\project_state.py` (template projects do) what waits
+for you there. The Modes page finds the guard in the first registered project
+that has `tools\chrome_guard\guard\mode.py`. The footer shows the version
+(short commit and date), so you can tell whether two laptops run the same one.
+
+**Update:** `git pull` on `main`, then stop the board and start it again (it
+refuses to start while an old one holds the port). Your tasks stay; the database
+is upgraded in place on start.
+
 ## Add a project
 
 - New project: `python -m coordinator init-project <folder> --key KEY --name "Name"`
@@ -137,11 +174,21 @@ and use the buttons under the table to set them in one call (one confirmation wi
   (`mode.py check-hash`), a chat waiting for your go ("chat X waits for your go: 1. ...,
   2. ..."; answer in that chat with `go 1, 2`) and a refused ready check with its reason.
   Go files untouched for 12 hours are ignored.
-- `mode.py` is found at `C:\Projects\_mail-desk\tools\guard\mode.py` unless
-  `mode_py = "<path>"` is set in `antson.toml` in the coordinator folder (or the
-  environment variable `COORDINATOR_GUARD_MODE_PY` is set).
+- `mode.py` is found in this order: the environment variable
+  `COORDINATOR_GUARD_MODE_PY`; `mode_py = "<path>"` in `antson.toml` in the
+  coordinator folder; the first registered project that has
+  `tools\chrome_guard\guard\mode.py`. Modes live per laptop in `%USERPROFILE%\.antson\`,
+  so any project's copy reads and writes the same state. With none found the Modes
+  page says so.
 - Antson projects set `default_mode = "write"` in their `project.toml` and keep
   `modes = ["read", "write"]`: the modes of forms replace per-task modes there.
+
+## Before a push
+
+`python tools/check_publish.py` runs the tests and checks the files that would ship:
+no user or OneDrive path, no client name (the list is read from the antson-helper
+skill repo, or from `ANTSON_BANNED_TERMS`), no non-dummy e-mail address, no
+`sources.toml`, `antson.toml`, `notify.toml` or database file. Push only when it says OK.
 
 ## Run the tests
 
