@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 from string import Template
 
-from . import core
+from . import core, version
 
 WEB_DIR = Path(__file__).parent / "web"
 TEMPLATE_DIR = WEB_DIR / "templates"
@@ -55,7 +55,7 @@ def _token_field(token) -> Raw:
 
 
 def _page(template, /, title, token="", **values) -> Raw:
-    return render(template, title=title, token_field=_token_field(token), **values)
+    return render(template, title=title, token_field=_token_field(token), version=version.describe(), **values)
 
 
 def icon(name: str, size: str = "sm") -> Raw:
@@ -879,7 +879,8 @@ def page_modes(d) -> Raw:
     if not d["mode_py_ok"]:
         notes.append(render("_note.html", tone="red", icon=icon("config-error", ""),
                             strong="The switch was not found.",
-                            text=f"No mode.py at {d['mode_py']}. Set mode_py in antson.toml in the "
+                            text=(f"No mode.py at {d['mode_py']}. " if d["mode_py"] else "No mode.py found. ")
+                                 + "Set mode_py in antson.toml in the "
                                  "coordinator folder, or COORDINATOR_GUARD_MODE_PY. "
                                  "Changing modes does not work until then."))
     if d["hash_ok"] is False:
@@ -897,7 +898,7 @@ def page_modes(d) -> Raw:
                              bulk=Raw("".join(render("_modes_btn.html", name="mode", value=m,
                                                      label=m, off="") for m in ("read", "dev", "prod")))))
     waiting = bool(d["job"]) and d["job"]["state"] == "waiting"
-    return render("modes.html", title="Modes",
+    return render("modes.html", title="Modes", version=version.describe(),
                   refresh=Raw('<meta http-equiv="refresh" content="3">\n' if waiting else ""),
                   notices=Raw("".join(notes)),
                   groups=Raw("".join(groups)) if groups
@@ -906,5 +907,5 @@ def page_modes(d) -> Raw:
 
 
 def page_error(error, back="/") -> Raw:
-    return render("error.html", title="Not done", text=str(error), back=back,
+    return render("error.html", title="Not done", text=str(error), back=back, version=version.describe(),
                   icon=icon("config-error", ""), icon_back=icon("back", ""))
