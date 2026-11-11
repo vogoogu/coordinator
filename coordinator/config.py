@@ -31,6 +31,10 @@ class ProjectConfig:
     on_done: str
     on_clarify: str
     states: list
+    claim: str = "move"   # "move": a claim moves the task to the first active state; "keep": it stays
+
+
+CLAIM_MODES = ("move", "keep")
 
 
 def _read(path, what):
@@ -98,6 +102,12 @@ def load_project(root: str) -> ProjectConfig:
             f"on_clarify {on_clarify!r} must be a handover state, "
             f"it is {by_name[on_clarify].kind!r}")
 
+    claim = data.get("claim", "move")
+    if claim not in CLAIM_MODES:
+        raise ConfigError(
+            f"claim must be one of {', '.join(CLAIM_MODES)}, got {claim!r} in {path}")
+
     return ProjectConfig(key=key.strip(), name=str(data.get("name", "")),
                          default_mode=default_mode, modes=list(modes),
-                         on_done=on_done, on_clarify=on_clarify, states=states)
+                         on_done=on_done, on_clarify=on_clarify, states=states,
+                         claim=claim)

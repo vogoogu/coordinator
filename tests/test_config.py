@@ -20,6 +20,16 @@ class ConfigTest(unittest.TestCase):
         self.write(text)
         return config.load_project(self.root)
 
+    def test_claim_defaults_to_move(self):
+        self.assertEqual(self.load('key = "T"\n').claim, "move")
+
+    def test_claim_keep_is_read(self):
+        self.assertEqual(self.load('key = "T"\nclaim = "keep"\n').claim, "keep")
+
+    def test_claim_unknown_value_rejected(self):
+        with self.assertRaises(config.ConfigError):
+            self.load('key = "T"\nclaim = "sideways"\n')
+
     def test_defaults_fill_missing_states(self):
         cfg = self.load('key = "T"\nname = "Test"\n')
         self.assertEqual(cfg.key, "T")

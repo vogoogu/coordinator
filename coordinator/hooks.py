@@ -92,6 +92,9 @@ def _packet(conn, task: dict, session_id: str) -> str:
     if notes:
         lines.append("Last notes:")
         lines += [f"- [{c['kind']}] {c['text']}" for c in notes[-PACKET_NOTES:]]
+    if cfg.claim == "keep":
+        lines.append("Claiming did not change the state; move the task yourself with "
+                     "task_set_state as the work progresses.")
     lines += [
         "Rules:",
         f"1. Your session id is {session_id}; pass it to every coordinator MCP tool.",

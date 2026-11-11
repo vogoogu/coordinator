@@ -500,7 +500,8 @@ def _end_claim(conn, claim_id, now, reason):
 def claim(conn, display_id, session_id, transcript_path="", cwd="",
           now: datetime | None = None, launch: str | None = None,
           waiting_only: bool = False) -> dict | None:
-    """Claim a task for a chat session and move it to the first active state.
+    """Claim a task for a chat session and move it to the first active state
+    (unless the project's `claim` setting is "keep": the state stays as it is).
 
     `launch` is the board's launch token (COORD_LAUNCH), stored on the claim.
     With `waiting_only` (the hook's COORD_TASK path, R30) a task that is not in a
@@ -540,7 +541,8 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
             (pk, session_id, transcript_path, cwd, stamp, stamp, launch or None))
         _bump(conn, pk, stamp, inbox=0)
         _event(conn, pk, actor, "claim", None, session_id, at=stamp)
-        _move(conn, task, first.name, actor, stamp)
+        if cfg.claim != "keep":  # "keep": the chat moves the task itself
+            _move(conn, task, first.name, actor, stamp)
         _set_session(conn, session_id, last_task_update=stamp)
     return _task_by_pk(conn, pk)
 
