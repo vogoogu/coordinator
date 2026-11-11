@@ -121,7 +121,7 @@ class BoardTest(BoardBase):
         core.claim(self.conn, tid, "sess-gone")
         self.conn.execute("UPDATE claim SET last_seen = '2020-01-01T00:00:00+00:00'")
         [rec] = self.sunk_during(lambda: self.get("/"))
-        self.assertEqual(rec["heading"], f"{tid} needs you")
+        self.assertEqual(rec["heading"], f"{core.task_name(core.get_task(self.conn, tid))} needs you")
 
     def test_board_page_load_without_expiry_is_quiet(self):
         tid = self.task("PA", "Busy")
@@ -260,7 +260,7 @@ class BoardTest(BoardBase):
         body = self.get("/p/PA")[1]
         self.assertIn("Start<span class=\"vh\"> PA-1</span>", body)
         self.assertNotIn("Start · ", body)
-        with mock.patch("coordinator.launcher.start_chat") as start:
+        with mock.patch("coordinator.launcher.open_folder") as start:
             status, _, h = self.post("/a/start", {"id": tid, "next": "/p/PA"})
         self.assertEqual((status, h["Location"]), (303, "/p/PA"))
         start.assert_called_once()
@@ -269,7 +269,7 @@ class BoardTest(BoardBase):
         tid = self.task()
         core.claim(self.conn, tid, "abcd-9999", transcript_path="C:\\t\\a.jsonl")
         body = self.get(f"/t/{tid}")[1]
-        self.assertIn("chat abcd working", body)
+        self.assertRegex(body, r"PA-1 spec . \w+ working")
         self.assertIn('data-action="claim"', body)
         self.assertIn('data-action="created"', body)
         self.assertIn(">Working<", body)
@@ -324,11 +324,13 @@ class BoardTest(BoardBase):
 
     def test_start_calls_launcher_with_root_and_id(self):
         tid = self.task("PA")
-        with mock.patch("coordinator.launcher.start_chat") as start:
+        with mock.patch("coordinator.launcher.open_folder") as start:
             status, _, h = self.post("/a/start", {"id": tid})
         self.assertEqual(status, 303)
         self.assertEqual(h["Location"], f"/t/{tid}")
-        start.assert_called_once_with(self.roots["PA"], tid)
+        start.assert_called_once_with(self.roots["PA"])
+        [note] = self.conn.execute("SELECT * FROM start_note").fetchall()   # the first chat there picks it up
+        self.assertIsNone(note["taken"])
 
     def test_person_set_done_via_board_records_person_actor(self):
         tid = self.task()
@@ -424,10 +426,10 @@ class BoardTest(BoardBase):
         self.conn.execute("UPDATE claim SET last_seen = ? WHERE session_id = ?",
                           (old, "sess-quiet"))
         body = self.get("/p/PA")[1]
-        self.assertIn("Chat sess quiet for 25 min, may have stopped", body)
-        self.assertNotIn("Chat sess working", body)
+        self.assertRegex(body, r"PA-1 spec . \w+ quiet for 25 min, may have stopped")
+        self.assertNotRegex(body, r"spec . \w+ working")
         core.touch(self.conn, "sess-quiet", "mcp__claude-in-chrome__computer")
-        self.assertIn("Chat sess working", self.get("/p/PA")[1])
+        self.assertRegex(self.get("/p/PA")[1], r"spec . \w+ working")
 
     def test_card_shows_holder_and_blocked_once(self):
         tid = self.task()
@@ -435,7 +437,7 @@ class BoardTest(BoardBase):
         core.set_blocked(self.conn, tid, PERSON, "waiting for key")
         core.set_open_points(self.conn, tid, PERSON, ["which db?"])
         body = self.get("/p/PA")[1]
-        self.assertIn("Chat sess working", body)
+        self.assertRegex(body, r"spec . \w+ working")
         self.assertIn('<article class="tcard urgent">', body)       # red edge
         self.assertIn('class="pill red pw"', body)
         self.assertIn("Blocked: waiting for key", body)
@@ -468,7 +470,7 @@ class BoardTest(BoardBase):
     def test_start_refused_with_live_claim(self):
         tid = self.task()
         core.claim(self.conn, tid, "s1")
-        with mock.patch("coordinator.launcher.start_chat") as start:
+        with mock.patch("coordinator.launcher.open_folder") as start:
             status, body, _ = self.post("/a/start", {"id": tid})
         self.assertEqual(status, 400)
         self.assertIn("WHAT:", body)
@@ -568,24 +570,19 @@ class BoardTest(BoardBase):
 
 
 class LauncherTest(unittest.TestCase):
-    def test_start_chat_opens_new_console_with_task_env(self):
-        with mock.patch("subprocess.Popen") as popen:
-            launcher.start_chat("C:\\root dir", "KMU-3")
+    def test_open_folder_runs_code_with_the_folder(self):
+        with mock.patch("shutil.which", return_value="C:/vs/code.cmd"), \
+                mock.patch("subprocess.Popen") as popen:
+            launcher.open_folder("C:/root dir")
         args, kw = popen.call_args
-        self.assertEqual(args[0], ["cmd", "/k", "claude"])
-        self.assertEqual(kw["cwd"], "C:\\root dir")
-        self.assertEqual(kw["env"]["COORD_TASK"], "KMU-3")
-        self.assertEqual(kw["creationflags"], subprocess.CREATE_NEW_CONSOLE)
+        self.assertEqual(args[0], ["C:/vs/code.cmd", "C:/root dir"])
+        self.assertEqual(kw["creationflags"], launcher.NO_WINDOW)
 
-    def test_start_chat_passes_fresh_launch_token(self):
-        with mock.patch("subprocess.Popen") as popen:
-            launcher.start_chat("C:\\root", "KMU-3")
-            launcher.start_chat("C:\\root", "KMU-3")
-        tokens = [c.kwargs["env"]["COORD_LAUNCH"] for c in popen.call_args_list]
-        for tok in tokens:
-            self.assertRegex(tok, r"^[0-9a-f]{16}$")
-        self.assertNotEqual(tokens[0], tokens[1])
-        self.assertEqual(popen.call_args.args[0], ["cmd", "/k", "claude"])
+    def test_open_folder_without_code_command_says_so(self):
+        with mock.patch("shutil.which", return_value=None):
+            with self.assertRaises(OSError) as cm:
+                launcher.open_folder("C:/root")
+        self.assertIn("'code' command", str(cm.exception))
 
 
 if __name__ == "__main__":

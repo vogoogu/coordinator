@@ -95,4 +95,31 @@
     }
     if (location.hash === "#new-task") { openDialog(document.getElementById("new-task")); }
   });
+
+  // Self-refresh: pages marked data-live ask /api/pulse every few seconds (a few bytes)
+  // and reload only when something was written. Never while a dialog is open or a field
+  // has been typed in, so nothing the person is writing is lost.
+  var POLL_MS = 5000;
+
+  function busy() {
+    if (document.querySelector("dialog[open]")) { return true; }
+    var a = document.activeElement;
+    return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.value);
+  }
+
+  function watch() {
+    if (!document.body.hasAttribute("data-live") || !window.fetch) { return; }
+    var seen = null;
+    function tick() {
+      if (document.hidden) { return; }
+      fetch("/api/pulse", { cache: "no-store" }).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (seen === null) { seen = d.stamp; return; }
+          if (d.stamp !== seen && !busy()) { location.reload(); }
+        }).catch(function () { /* board stopped: try again next tick */ });
+    }
+    tick();
+    setInterval(tick, POLL_MS);
+  }
+  document.addEventListener("DOMContentLoaded", watch);
 })();

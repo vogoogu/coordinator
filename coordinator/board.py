@@ -58,6 +58,10 @@ def _card(conn, task: dict, live: dict, cfg, kinds: dict, labels: dict, now) -> 
             "holder": claim["session_id"] if claim else "",
             "holder_since": claim["started"] if claim else "",
             "holder_seen": claim["last_seen"] if claim else "",
+            "name": core.task_name(task),
+            "waiting_click": (claim["waiting_click"] or "") if claim else "",
+            "helpers": (claim["helpers"] if claim and core.helpers_running(
+                claim, now) else 0),
             "blocked": task["blocked"] or "", "open_points": task["open_points"],
             "since": task["updated"], "why": need["why"] if need else "",
             "note": (need or {}).get("note", ""), "note_kind": (need or {}).get("note_kind", "")}
@@ -484,6 +488,12 @@ def api_project(conn, key: str) -> dict:
             "inbox": inbox, "columns": columns}
 
 
+def api_pulse(conn) -> dict:
+    """A tiny fingerprint of what the pages show: it changes with every write (each write
+    leaves an event row). The pages poll it and reload only when it changed."""
+    return {"stamp": conn.execute("SELECT COALESCE(MAX(id), 0) FROM event").fetchone()[0]}
+
+
 def api_task(conn, display_id: str) -> dict:
     t = core.get_task(conn, display_id)
     proj = core.get_project(conn, t["project"])
@@ -498,11 +508,16 @@ def api_task(conn, display_id: str) -> dict:
     live = [c for c in t["claims"] if c["ended"] is None]
     for c in t["claims"]:
         c["resume"] = f"claude --resume {c['session_id']}"
+    claim = core.live_claims(conn).get(t["id"])
+    now_utc = datetime.now(timezone.utc)
+    reports = [{**c, "name": core.task_name(t, c["role"])}
+               for c in t["comments"] if c["role"]]
     state_label = next(s["label"] for s in states if s["name"] == t["state"])
     fields = [("Title", t["title"]), ("State", state_label), ("Mode", t["mode"]),
               ("Goal", t["goal"]), ("Done when", t["done_when"]), ("Scope", t["scope"]),
               ("Origin", t["origin"]), ("Blocked", t["blocked"] or ""),
               ("Open points", "; ".join(t["open_points"])),
+              ("Forms", ", ".join(t["forms"])),
               ("In inbox", "yes" if t["inbox"] else "no"),
               ("Created by", f"{t['created_by_type']} {t['created_by_id']}"),
               ("Created", t["created"]), ("Updated", t["updated"]),
@@ -516,6 +531,10 @@ def api_task(conn, display_id: str) -> dict:
             "fields": [{"label": a, "value": b} for a, b in fields],
             "states": states,
             "modes": cfg.modes if cfg else [t["mode"]],
+            "name": core.task_name(t), "reports": reports,
+            "waiting_click": (claim["waiting_click"] or "") if claim else "",
+            "helpers": (claim["helpers"] if claim and core.helpers_running(claim, now_utc)
+                        else 0),
             "live_claim": live[0]["session_id"] if live else None,
             "live_since": live[0]["started"] if live else None,
             "lease_end": (_lease_end(live[0]).isoformat(timespec="seconds")
@@ -618,9 +637,10 @@ def do_start(conn, f):
     tid = _f(f, "id")
     root = _ensure_startable(conn, tid)
     try:
-        launcher.start_chat(root, tid)
+        launcher.open_folder(root)
     except OSError as e:
-        raise messages.cannot_start(tid, f"The chat could not be opened in {root}: {e}") from None
+        raise messages.cannot_start(tid, f"VS Code could not open {root}: {e}") from None
+    core.leave_start_note(conn, tid, person())
     return tid
 
 
@@ -634,12 +654,13 @@ GET_ROUTES = [(re.compile(r"/"), "index"), (re.compile(r"/p/([^/]+)"), "project"
               (re.compile(r"/needs/([^/]+)"), "needs"),
               (re.compile(r"/modes"), "modes"), (re.compile(r"/api/modes"), "modes"),
               (re.compile(r"/api/index"), "index"),
+              (re.compile(r"/api/pulse"), "pulse"),
               (re.compile(r"/api/project/([^/]+)"), "project"),
               (re.compile(r"/api/task/([^/]+)"), "task")]
 API = {"index": (api_index, page_index), "project": (api_project, page_project),
        "project_all": (api_project, lambda d: page_project(d, older=True)),
        "task": (api_task, page_task), "modes": (api_modes, page_modes),
-       "needs": (api_needs, page_needs)}
+       "needs": (api_needs, page_needs), "pulse": (api_pulse, None)}
 
 
 class Handler(BaseHTTPRequestHandler):

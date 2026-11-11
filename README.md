@@ -117,11 +117,43 @@ board after updating so that it uses the new folder too.
 
 ## How a chat works with a task
 
-Press the Start button on a task in the board. It opens a chat with a packet
-(goal, done-when, scope, open points). The chat works inside the scope and ends
-by releasing the task with one of three outcomes: `done` (hand over for review),
-`clarify` (needs an answer) or `progress` (partial result). Only a person can set
-a task to finished or closed.
+Press the Start button on a task in the board. It opens the project folder in
+VS Code (`code <folder>`; the `code` command must be on PATH) and leaves a "waiting
+task" note for that folder. Open the Claude panel and start a chat there: the first
+new chat in that folder takes the task and gets a packet (goal, done-when, scope, open
+points, its chat name). A note older than an hour is ignored; a task that is no longer
+waiting is skipped. The chat works inside the scope and ends by releasing the task
+with one of three outcomes: `done` (hand over for review), `clarify` (needs an answer)
+or `progress` (partial result). Only a person can set a task to finished or closed.
+
+### Task chain (spec chat with background helpers)
+
+- **Names.** Every task has a short word, for example `otter`. The chat is
+  `KMU-7 spec · otter`; its helpers are `KMU-7 build 1 · otter`, `KMU-7 test 1 · otter`
+  (the number counts fix rounds). The board cards, the task page and the pop-ups use
+  these names. Tasks made before this existed get a word when you press Start.
+  The packet tells the chat its name; the coordinator cannot set the title of the
+  VS Code chat tab.
+- **Helper reports.** A helper reports with `task_comment` and `role` (`build 1`,
+  `test 1`, `spec`). The task page shows these under "Helper reports", word for word,
+  newest first, each under its chat name.
+- **Waits for your click.** When Claude Code stops on a permission question, the
+  `Notification` hook marks the task ("waits for your click" on the card and the task
+  page) and gives the pop-up. The mark goes away with the next tool call of the chat.
+- **Lease while helpers work.** The `SubagentStart` and `SubagentStop` hooks count a
+  chat's running helpers. While one runs the claim does not expire (for at most
+  2 hours after the helper started, in case its stop is never seen) and the card says
+  "working, helper running" instead of "quiet".
+- **Overlap list.** `task_overlaps` (MCP) lists the other open tasks of the project
+  with the forms they touch, tasks sharing a form first. A chat records the forms of
+  its task with `task_update` and `fields: {"forms": ["497", "458"]}`. Forms are
+  free text (ids or names); the coordinator does not read them from the spec.
+- **Self-refresh.** Home, project and task pages ask `/api/pulse` (a few bytes) every
+  5 seconds and reload only when something was written; never while a dialog is open
+  or a field has text in it.
+
+After a `git pull`, run `python -m coordinator install-help` and merge the new hook
+entries (`Notification`, `SubagentStart`, `SubagentStop`) into your settings.
 
 ## Notifications
 

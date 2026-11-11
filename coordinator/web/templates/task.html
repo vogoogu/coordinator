@@ -3,7 +3,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>$title</title>
 <link rel="stylesheet" href="/static/board.css"><script src="/static/board.js" defer></script></head>
-<body><div class="page">
+<body data-live="1"><div class="page">
 <header class="top">
   <a class="back" href="/p/$key">$icon_back<span class="lbl">$project_name board</span></a>
   <span class="vsep"></span>
@@ -33,6 +33,10 @@
   <section class="card panel p-actions" aria-labelledby="h-act">
     <div class="panel-h"><h2 id="h-act">Actions</h2></div>
     $actions
+  </section>
+  <section class="card panel p-reports" aria-labelledby="h-rp">
+    <div class="panel-h"><h2 id="h-rp">Helper reports</h2><span class="count">$report_count</span><span class="muted nf">Word for word</span></div>
+    $reports
   </section>
   <section class="card panel p-chats" aria-labelledby="h-ch">
     <div class="panel-h"><h2 id="h-ch">Chats that worked on it</h2><span class="count">$chat_count</span></div>

@@ -1,13 +1,17 @@
-"""Opens a Claude Code chat for a task in a new console window."""
-import os
-import secrets
+"""Opens a project folder in VS Code (the board's Start button)."""
+import shutil
 import subprocess
 
+NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: the `code` launcher is a .cmd file
 
-def start_chat(root: str, display_id: str) -> None:
-    """COORD_TASK names the task; COORD_LAUNCH is a fresh token per Start, so a
-    /clear in this window (new session id) can take over its own claim (R32)."""
-    subprocess.Popen(["cmd", "/k", "claude"], cwd=root,
-                     env=os.environ | {"COORD_TASK": display_id,
-                                       "COORD_LAUNCH": secrets.token_hex(8)},
-                     creationflags=subprocess.CREATE_NEW_CONSOLE)
+
+def open_folder(root: str) -> None:
+    """Open `root` in VS Code (`code <folder>`); an already open window is reused.
+    The chat itself is started by the person in the Claude panel: the first new chat
+    in that folder picks the task up (core.take_start_note). Raises OSError if the
+    `code` command is not found or cannot start."""
+    exe = shutil.which("code")
+    if not exe:
+        raise FileNotFoundError("the 'code' command is not on PATH (VS Code: "
+                                "Command Palette, 'Shell Command: Install code in PATH')")
+    subprocess.Popen([exe, root], creationflags=NO_WINDOW)

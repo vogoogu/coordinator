@@ -545,14 +545,21 @@ def _task_card(c: dict, modes: list, token: str, here: str, now: datetime) -> Ra
     metas = []
     if c["holder"]:
         silent = now - _when(c["holder_seen"] or c["holder_since"])
-        if silent > QUIET_AFTER:
+        who = c.get("name") or f"Chat {_short(c['holder'])}"
+        if c.get("helpers"):
+            metas.append(render("_meta.html", title=c["holder"], lead=render("_live.html"),
+                                text=f"{who} working, helper running · "
+                                     f"{_span(now - _when(c['holder_since']))}"))
+        elif silent > QUIET_AFTER:
             metas.append(render("_meta.html", title=c["holder"], lead="",
-                                text=f"Chat {_short(c['holder'])} quiet for "
-                                     f"{_span(silent)}, may have stopped"))
+                                text=f"{who} quiet for {_span(silent)}, may have stopped"))
         else:
             metas.append(render("_meta.html", title=c["holder"], lead=render("_live.html"),
-                                text=f"Chat {_short(c['holder'])} working · "
+                                text=f"{who} working · "
                                      f"{_span(now - _when(c['holder_since']))}"))
+        if c.get("waiting_click"):
+            metas.append(render("_meta_pill.html",
+                                pill=_pill("amb pw", "question", "Waits for your click")))
     if c["why"] in URGENT_LOOK and not final:
         metas.append(render("_meta_pill.html", pill=_pill("red pw", *URGENT_LOOK[c["why"]])))
     if c["blocked"] and not final:
@@ -722,6 +729,14 @@ def _event(e: dict, labels: dict, modes: list, now: datetime) -> Raw:
                   when=_clock(e["at"], now), body=body)
 
 
+def _reports(d: dict) -> Raw:
+    """Helper reports, word for word, each under the chat name that wrote it."""
+    items = [render("_report.html", name=r["name"], when=_clock(r["at"], _now()),
+                    text=r["text"]) for r in d["reports"]]
+    return Raw("".join(reversed(items))) if items else render(
+        "_empty_small.html", text="No helper has reported on this task yet.")
+
+
 def _details(t: dict) -> Raw:
     def row(label, value, empty):
         return render("_dl_row.html", label=label, value=value or empty,
@@ -737,11 +752,13 @@ def _details(t: dict) -> Raw:
                         row("Done when", t["done_when"], "Not set"),
                         row("Scope", t["scope"], "Not set"),
                         row("Open points", points, "None"),
+                        row("Forms", ", ".join(t["forms"]), "Not set"),
                         row("Blocked", t["blocked"], "Not blocked"),
                         row("Origin", origin, "")]))
 
 
-def _chat_row(c: dict, now: datetime) -> Raw:
+def _chat_row(c: dict, now: datetime, name: str = "") -> Raw:
+    name = name or _short(c["session_id"])
     if c["ended"] is None and now - _when(c["last_seen"]) > QUIET_AFTER:
         pill = render("_pill.html", cls="amb", icon="",
                       text=f"Quiet for {_span(now - _when(c['last_seen']))}")
@@ -759,7 +776,7 @@ def _chat_row(c: dict, now: datetime) -> Raw:
                 else f"{start:%H:%M} to {end:%d.%m.%Y %H:%M}")
     transcript = (render("_chat_path.html", path=c["transcript_path"], icon_copy=icon("copy"))
                   if c["transcript_path"] else "")
-    return render("_chat_row.html", session_id=c["session_id"], short=_short(c["session_id"]),
+    return render("_chat_row.html", session_id=c["session_id"], short=name,
                   pill=pill, date=_date(c["started"]), span=span, transcript=transcript,
                   resume=c["resume"], icon_copy=icon("copy"))
 
@@ -778,6 +795,16 @@ def _notes(d: dict, now: datetime) -> Raw:
         out.append(render("_note.html", tone="red", icon=icon("stopped", ""),
                           strong="The chat stopped without a report.",
                           text=_need_detail(need, now)))
+    if d["waiting_click"]:
+        out.append(render("_note.html", tone="amb", icon=icon("question", ""),
+                          strong=f"{d['name']} waits for your click.",
+                          text="Claude Code is asking for permission in its window. "
+                               "The chat goes on after you answer there."))
+    if d["helpers"] and d["live_claim"]:
+        out.append(render("_note.html", tone="info", icon=icon("info", ""),
+                          strong="A helper is working for this chat.",
+                          text="Builder or tester run in the background; "
+                               "the lease stays alive while they run."))
     if t["inbox"]:
         out.append(render("_note.html", tone="info", icon=icon("inbox", ""),
                           strong="New in inbox.",
@@ -852,12 +879,12 @@ def page_task(d, error=None) -> Raw:
     cls, icon_name, word = _kind(d["kind"])
     state_pill = render("_pill.html", cls=f"lg {cls}", icon=icon(icon_name),
                         text=d["state_label"])
-    live = (render("_t_live.html", session=d["live_claim"], short=_short(d["live_claim"]),
+    live = (render("_t_live.html", session=d["live_claim"], name=d["name"],
                    span=_span(now - _when(d["live_since"]))) if d["live_claim"] else "")
     history = t["history"]
     timeline = Raw("".join(_event(e, labels, d["modes"], now) for e in reversed(history)))
     claims = list(reversed(t["claims"]))
-    chats = (Raw("".join(_chat_row(c, now) for c in claims)) if claims
+    chats = (Raw("".join(_chat_row(c, now, d["name"]) for c in claims)) if claims
              else render("_empty_small.html", text="No chat has worked on this task yet."))
     name = p["name"] or p["key"]
     return _page("task.html", f"{t['id']} {t['title']}", d["token"], key=p["key"],
@@ -866,7 +893,8 @@ def page_task(d, error=None) -> Raw:
                  mode=t["mode"], mode_icon=_mode_icon(t["mode"], d["modes"]), live=live,
                  notes=_notes(d, now), details=_details(t), timeline=timeline,
                  event_count=len(history), actions=_actions(d, error),
-                 chats=chats, chat_count=len(claims), **_head(now))
+                 chats=chats, chat_count=len(claims), reports=_reports(d),
+                 report_count=len(d["reports"]), **_head(now))
 
 
 # ------------------------------------------------------------------ modes page
