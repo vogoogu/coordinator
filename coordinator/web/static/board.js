@@ -35,6 +35,32 @@
     if (wide.matches && e.target.closest(".col summary")) { e.preventDefault(); }
   });
 
+  // Modes page: one tick in the header selects or clears every row of that table.
+  function rowBoxes(table) {
+    return table.querySelectorAll("tbody input[type=checkbox][name=ids]");
+  }
+
+  function syncSelectAll(table) {
+    var all = table.querySelector("[data-select-all]");
+    if (!all) { return; }
+    var boxes = rowBoxes(table), n = 0;
+    for (var i = 0; i < boxes.length; i++) { if (boxes[i].checked) { n++; } }
+    all.checked = boxes.length > 0 && n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+  }
+
+  document.addEventListener("change", function (e) {
+    var table = e.target.closest && e.target.closest("table");
+    if (!table) { return; }
+    if (e.target.hasAttribute("data-select-all")) {
+      var boxes = rowBoxes(table);
+      for (var i = 0; i < boxes.length; i++) { boxes[i].checked = e.target.checked; }
+      e.target.indeterminate = false;
+    } else if (e.target.name === "ids") {
+      syncSelectAll(table);
+    }
+  });
+
   document.addEventListener("submit", function (e) {
     var msg = e.target.getAttribute("data-confirm");
     if (msg && !window.confirm(msg)) { e.preventDefault(); }
@@ -59,6 +85,8 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     foldColumns();
+    var tables = document.querySelectorAll("table.modes");
+    for (var t = 0; t < tables.length; t++) { syncSelectAll(tables[t]); }
     if (wide.addEventListener) { wide.addEventListener("change", foldColumns); }
     var selects = document.querySelectorAll("[data-note-for]");
     for (var i = 0; i < selects.length; i++) {
