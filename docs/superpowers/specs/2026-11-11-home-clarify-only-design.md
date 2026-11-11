@@ -17,8 +17,14 @@ changes to clarify items.
   and "Open board". This is the old `_project_card` and `_project_card.html`, restored
   and adapted, not a new design.
 - **Content of a card = only its clarify tasks**, as to-do rows (the old `_need_row`
-  look: question icon, "Needs clarification" label, age, ID, title, the chat's question
-  as detail, link to `/t/<id>`). Oldest first inside a card.
+  look, but **without** the "Needs clarification" pill, since every row is that: first line
+  ID chip on the left and age on the right, then the **title only**. No question text and
+  no detail line: the chat's question is read on the task page `/t/<id>`, which the row links to). Oldest first inside a card. The task ID is a **chip**
+  (monospace, 12px, weight 600, padding 2px 8px, radius 6px, handover tint `--k-hand-c` with
+  text `--k-hand-t`), as on the project board cards, not plain grey text.
+- **Separator line** between tasks in a card: 1px solid `rgba(3,23,43,.16)` (a new token, e.g.
+  `--sep`; slightly stronger than the old `--line-soft`), on the top edge of every row, so the
+  first row is also set off from the card header.
 - **Quiet card** when the project has none: the existing quiet body ("circle-check"),
   with wording "Nothing to clarify".
 - **Status pill per card:** amber "Check" if it has clarify tasks, green "OK" if not.
@@ -60,9 +66,8 @@ Built in `page_index` (`coordinator/pages.py`) from `api_index` (`coordinator/bo
 
 - The home page lists every coordinator task whose state is the project's
   `on_clarify` state (default `clarify`, label "Needs clarification"), across all projects.
-- Each row has what Daria needs to answer without opening the task: task ID,
-  title, project, the last comment (the chat's question), and how long it has waited.
-  The row links to the task page `/t/<id>`.
+- Each row shows the task ID chip, the title and how long it has waited (revision 1: the
+  chat's question is not shown on home). The row links to the task page `/t/<id>`.
 - Oldest first, so the longest-waiting question is on top.
 - When nothing is in clarify, one calm line: "No task needs clarification." (with the existing "all good" look).
 - Light theme, existing CSS tokens, handover colours (`k-hand`) and the question icon.
