@@ -7,7 +7,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import config, core, db, messages, notify, paths
+from . import antson, config, core, db, messages, notify, paths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # PostToolUse is the lease heartbeat. Built-in tools only: MCP tools (browser
@@ -54,12 +54,24 @@ def cmd_init_project(args, conn):
     target.write_text(text, encoding="utf-8", newline="\n")
     proj = core.add_project(conn, str(folder), _actor())
     print(f"Project {proj['key']} registered at {proj['root']}")
+    _seed_guard(proj)
     return 0
+
+
+def _seed_guard(proj) -> None:
+    """Tell the mode guard about the project's forms. Never blocks the connect."""
+    try:
+        note = antson.seed_project(proj["root"], proj["key"])
+    except Exception as e:          # the connect is done; the guard is optional
+        note = f"Antson forms were not registered: {e}"
+    if note:
+        print(note)
 
 
 def cmd_add_project(args, conn):
     proj = core.add_project(conn, args.folder, _actor())
     print(f"Project {proj['key']} registered at {proj['root']}")
+    _seed_guard(proj)
     return 0
 
 

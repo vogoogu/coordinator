@@ -307,6 +307,36 @@ def _run_set(job: Job) -> None:
         job.state = "done"
 
 
+# ------------------------------------------------------------------ seeding a project
+FORMS_LINE = re.compile(r"^\s*-\s*Antson forms:\s*(.+)$", re.M)     # same line the guard reads
+SEED_TIMEOUT = 30
+
+
+def seed_project(folder, key) -> str | None:
+    """Register the forms of a project's CLAUDE.md with the guard (`mode.py seed`, as read).
+    Returns a one-line result to show, or None when the project has no Antson forms
+    line. Never raises: a missing or failing guard gives a note and the connect goes on."""
+    try:
+        text = (Path(folder) / "CLAUDE.md").read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    if not FORMS_LINE.search(text):
+        return None
+    try:
+        if not Path(mode_py_path()).is_file():
+            return f"Antson forms were not registered: mode.py was not found at {mode_py_path()}."
+        proc = _run(["seed", str(folder), str(key)], SEED_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return "Antson forms were not registered: mode.py did not answer in time."
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"Antson forms were not registered: mode.py could not run ({e})."
+    if proc.returncode != 0:
+        last = ((proc.stderr or proc.stdout).strip().splitlines() or ["no answer"])[-1]
+        return f"Antson forms were not registered: mode.py failed ({last})."
+    out = (proc.stdout.strip().splitlines() or ["no answer"])[-1]
+    return f"Antson forms: {out}"
+
+
 def wait_idle(timeout: float = 10) -> None:
     """Wait for the running call to end (tests)."""
     job = _job
