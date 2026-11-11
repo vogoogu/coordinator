@@ -133,28 +133,34 @@ def _need(conn, t, kind, cfg, labels, claim, now) -> dict | None:
 
 
 def api_index(conn) -> dict:
-    """The home page: the tasks that wait for an answer, i.e. every task in its project's
-    on_clarify state, oldest first. Nothing from outside the database is read here."""
+    """The home page: one entry per registered project with the tasks that wait for an answer
+    (its on_clarify state), oldest first. Nothing from outside the database is read here."""
     live = core.live_claims(conn)
     now = datetime.now(timezone.utc)
-    clarify = []
+    projects, clarify = [], []
     for p in core.list_projects(conn):
-        cfg, _ = _config_and_error(p)
-        if not cfg:
-            continue
-        kinds = _kinds(cfg)
-        labels = {s.name: s.label for s in cfg.states}
-        for t in core.list_tasks(conn, p["key"]):
-            if t["state"] != cfg.on_clarify:
-                continue
-            item = _need(conn, t, kinds.get(t["state"], "unknown"), cfg, labels,
-                         live.get(t["id"]), now)
-            if item and item["state_role"] == "clarify":
-                clarify.append({**item, "project_name": p["name"] or p["key"]})
+        cfg, cfg_error = _config_and_error(p)
+        items = []
+        if cfg:
+            kinds = _kinds(cfg)
+            labels = {s.name: s.label for s in cfg.states}
+            for t in core.list_tasks(conn, p["key"]):
+                if t["state"] != cfg.on_clarify:
+                    continue
+                item = _need(conn, t, kinds.get(t["state"], "unknown"), cfg, labels,
+                             live.get(t["id"]), now)
+                if item and item["state_role"] == "clarify":
+                    items.append({**item, "project_name": p["name"] or p["key"]})
+        items.sort(key=lambda i: i["since"])
+        chats = sum(1 for tid in live if tid.rsplit("-", 1)[0].upper() == p["key"].upper())
+        projects.append({"key": p["key"], "name": p["name"], "config_error": cfg_error,
+                         "chats": chats, "clarify": items})
+        clarify.extend(items)
+    projects.sort(key=lambda p: (-len(p["clarify"]), (p["name"] or p["key"]).lower()))
     clarify.sort(key=lambda i: i["since"])
     return {"token": core.board_token(conn),
             "enforcement": core.get_setting(conn, "enforcement", "warn"),
-            "clarify": clarify}
+            "projects": projects, "clarify": clarify}
 
 
 # BACKLOG(home): the old home page (everything that "needs you": stopped chats, leases, blocked,

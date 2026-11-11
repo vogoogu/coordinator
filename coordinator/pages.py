@@ -66,7 +66,7 @@ def icon(name: str, size: str = "sm") -> Raw:
 
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-INDEX_ROWS = 5            # "Needs you" rows per project card; the rest are on the board
+INDEX_ROWS = 5            # clarify rows per project card; the rest are on the board
 TINTS = 5                 # monogram tints m1..m5 in board.css
 
 
@@ -400,7 +400,7 @@ def page_needs(d) -> Raw:
             groups.append(render("_out_group.html", heading=heading, count=len(items),
                                  rows=Raw("".join(_out_item(i, card, d["token"], here) for i in items))))
     if not groups and not notes:
-        groups.append(render("_card_quiet.html", icon=icon("circle-check", "")))
+        groups.append(render("_card_quiet.html", icon=icon("circle-check", ""), text="Nothing needs you"))
     return _page("needs.html", f"{name} · Needs you", d["token"], name=name, urlname=quote(card["name"], safe=""),
                  mark=_logo(name, bool(card.get("fixed"))) or monogram(name), tint=_tint(card["name"]),
                  updated=f"{now:%H:%M}", icon_back=icon("back"), icon_refresh=icon("refresh", ""),
@@ -408,32 +408,57 @@ def page_needs(d) -> Raw:
 
 
 CLARIFY_NONE = "No task needs clarification."
+CLARIFY_QUIET = "Nothing to clarify"
 
 
 def _clarify_row(i: dict, now: datetime) -> Raw:
-    """One waiting question: ID, title, project, the chat's last comment, how long it waited."""
-    return render("_clarify_row.html", icon=icon(ROLE_ICON["clarify"]), label=i["state_label"],
-                  age=_age(i["since"], now), id=i["id"], title=i["title"], project=i["project"],
-                  project_name=i["project_name"],
-                  detail=i["note"] or f"Waiting in {i['state_label']}.")
+    """One waiting task in a project card: ID chip, age, title. The question is on the task page."""
+    return render("_clarify_row.html", age=_age(i["since"], now), id=i["id"], title=i["title"])
+
+
+def _project_card(p: dict, now: datetime) -> Raw:
+    items = p["clarify"]
+    tone, status_icon, status = PROJECT_LOOK["amber" if items or p["config_error"] else "green"]
+    rows = [_clarify_row(i, now) for i in items[:INDEX_ROWS]]
+    if len(items) > INDEX_ROWS:
+        rows.append(render("_card_more.html", key=p["key"],
+                           text=f"{len(items) - INDEX_ROWS} more on the board"))
+    if p["config_error"]:
+        rows.insert(0, render("_card_config_error.html", icon=icon("config-error", ""),
+                              error=p["config_error"]))
+    body = (Raw('<div class="crows">' + "".join(rows) + "</div>") if rows
+            else render("_card_quiet.html", icon=icon("circle-check", ""), text=CLARIFY_QUIET))
+    n = p["chats"]
+    chats = render("_chats.html", muted="" if n else "muted",
+                   live=render("_live.html") if n else "",
+                   text=f"{n} chat{'s' if n != 1 else ''} working" if n else "No chat working")
+    count = len(items)
+    name = p["name"] or p["key"]
+    return render("_project_card.html", tone=tone, key=p["key"], name=name,
+                  monogram=_logo(p["key"]) or monogram(name), tint=_tint(p["key"]),
+                  status_icon=icon(status_icon), status=status,
+                  count=count, count_class="" if count else "zero",
+                  count_word="needs you" if count == 1 else "need you",
+                  body=body, chats=chats, icon_chevron=icon("chevron-right"))
 
 
 def page_index(d) -> Raw:
     now = datetime.now().astimezone()
-    items = d["clarify"]
-    if items:
-        n = len(items)
+    projects = d["projects"]
+    total = sum(len(p["clarify"]) for p in projects)
+    if total:
+        busy = sum(1 for p in projects if p["clarify"])
         summary = render("_index_heading.html",
-                         headline="1 task needs clarification" if n == 1 else f"{n} tasks need clarification",
-                         where="oldest first")
-        rows = Raw('<section class="card clarify">' + "".join(_clarify_row(i, now) for i in items) + "</section>")
+                         headline="1 task needs clarification" if total == 1
+                         else f"{total} tasks need clarification",
+                         where=f"in {busy} of {len(projects)} project{'s' if len(projects) != 1 else ''}")
     else:
         summary = render("_index_quiet.html", icon=icon("circle-check", "lg"), text=CLARIFY_NONE)
-        rows = Raw("")
+    cards = Raw("".join(_project_card(p, now) for p in projects))
     return _page("index.html", "Coordinator", d["token"],
                  date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
                  updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),
-                 icon_modes=icon("sliders", ""), summary=summary, rows=rows)
+                 icon_modes=icon("sliders", ""), summary=summary, cards=cards)
 
 
 # BACKLOG(home): (old page_index)

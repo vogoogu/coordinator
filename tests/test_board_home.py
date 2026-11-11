@@ -1,6 +1,6 @@
 """The home page lists only tasks that wait in the clarify state (COORD-4)."""
 import unittest
-from datetime import datetime
+from pathlib import Path
 from unittest import mock
 
 from coordinator import board, core, pages
@@ -35,28 +35,33 @@ class HomeClarifyTest(BoardBase):
         data = self.get_json("/api/index")
         self.assertEqual([i["id"] for i in data["clarify"]], [c])
 
-    def test_oldest_first(self):
+    def test_oldest_first_inside_a_card(self):
         new = self.clarify("PA", "Newer", session="s-a")
-        old = self.clarify("PB", "Older", session="s-b")
+        old = self.clarify("PA", "Older", session="s-b")
         self.age(old, "2026-01-01T10:00:00+00:00")
         self.age(new, "2026-02-01T10:00:00+00:00")
         body = self.get("/")[1]
         self.assertLess(body.index(f'href="/t/{old}"'), body.index(f'href="/t/{new}"'))
         self.assertEqual([i["id"] for i in self.get_json("/api/index")["clarify"]], [old, new])
 
-    def test_row_shows_question_and_links(self):
+    def test_row_is_chip_age_title_only(self):
         tid = self.clarify("PB", "Pick a store", "Which database?")
         body = self.get("/")[1]
         self.assertIn(f'href="/t/{tid}"', body)
+        self.assertIn(f'<span class="idc">{tid}</span>', body)
         self.assertIn("Pick a store", body)
         self.assertIn('href="/p/PB"', body)
-        self.assertIn("Which database?", body)
+        self.assertNotIn("Which database?", body)
+        self.assertNotIn("Needs clarification", body)
         self.assertIn("1 task needs clarification", body)
+        self.assertIn("in 1 of 2 projects", body)
 
     def test_heading_counts_several(self):
         self.clarify("PA", "One", session="s-a")
         self.clarify("PB", "Two", session="s-b")
-        self.assertIn("2 tasks need clarification", self.get("/")[1])
+        body = self.get("/")[1]
+        self.assertIn("2 tasks need clarification", body)
+        self.assertIn("in 2 of 2 projects", body)
 
     def test_clarify_task_that_is_also_blocked_shows_once(self):
         tid = self.clarify()
@@ -64,28 +69,83 @@ class HomeClarifyTest(BoardBase):
         body = self.get("/")[1]
         self.assertEqual(body.count(f'href="/t/{tid}"'), 1)
 
-    def test_clarify_without_comment_uses_fallback(self):
-        item = {"id": "PA-1", "title": "No note", "project": "PA", "project_name": "Name PA",
-                "state_label": "Needs clarification", "note": "", "since": "2026-11-11T10:00:00+00:00"}
-        row = str(pages._clarify_row(item, datetime.now().astimezone()))
-        self.assertIn("Waiting in Needs clarification.", row)
+    def test_every_project_has_exactly_one_card(self):
+        self.clarify("PA")
+        body = self.get("/")[1]
+        for key in ("PA", "PB"):
+            self.assertEqual(body.count(f'id="pc-{key}"'), 1)
+            self.assertEqual(body.count(f'<a href="/p/{key}">Open board'), 1)
+        self.assertEqual(body.count('class="masonry"'), 1)
 
-    def test_empty_state_is_one_quiet_line(self):
+    def test_quiet_project_card(self):
+        self.clarify("PA")
+        body = self.get("/")[1]
+        quiet = body[body.index('id="pc-PB"'):]
+        self.assertIn("Nothing to clarify", quiet)
+        self.assertIn('pill grn', quiet)
+        self.assertIn("OK", quiet)
+        busy = body[body.index('id="pc-PA"'):body.index('id="pc-PB"')]
+        self.assertIn("pill amb", busy)
+        self.assertIn("Check", busy)
+        self.assertNotIn("Nothing to clarify", busy)
+
+    def test_all_quiet_still_shows_all_cards(self):
         body = self.get("/")[1]
         self.assertIn("No task needs clarification.", body)
-        self.assertNotIn('class="irow"', body)
-        for gone in ("things need you", "masonry", "Mode file", "All 2 projects are quiet"):
+        self.assertNotIn("irow", body.replace(".irow", ""))
+        self.assertEqual(body.count("Nothing to clarify"), 2)
+        for gone in ("things need you", "Mode file", "All 2 projects are quiet"):
             self.assertNotIn(gone, body)
+
+    def test_card_order_busiest_first_then_alphabetical(self):
+        self.clarify("PB", "x", session="s-b")
+        data = self.get_json("/api/index")
+        self.assertEqual([p["key"] for p in data["projects"]], ["PB", "PA"])
+        self.assertEqual([p["key"] for p in data["projects"] if not p["clarify"]], ["PA"])
+        self.make_project("third", "PC")
+        data = self.get_json("/api/index")
+        self.assertEqual([p["key"] for p in data["projects"]], ["PB", "PA", "PC"])
+
+    def test_count_per_card(self):
+        self.clarify("PA", "One", session="s-a")
+        self.clarify("PA", "Two", session="s-b")
+        body = self.get("/")[1]
+        self.assertIn('<b class="">2</b><span>need you</span>', body)
+        self.assertIn('<b class="zero">0</b><span>need you</span>', body)
+
+    def test_row_cap_and_more_link(self):
+        for n in range(pages.INDEX_ROWS + 2):
+            self.clarify("PA", f"T{n}", session=f"s-{n}")
+        body = self.get("/")[1]
+        self.assertEqual(body.count('class="idc"'), pages.INDEX_ROWS)
+        self.assertIn("2 more on the board", body)
+        self.assertIn(f'<b class="">{pages.INDEX_ROWS + 2}</b>', body)
+
+    def test_broken_project_toml_still_gets_a_card(self):
+        Path(self.roots["PB"], ".coordinator", "project.toml").write_text("key = [", encoding="utf-8")
+        self.clarify("PA")
+        body = self.get("/")[1]
+        card = body[body.index('id="pc-PB"'):]
+        self.assertIn("The project file could not be read", card)
+        self.assertEqual(body.count('id="pc-PB"'), 1)
+        self.assertIn("1 task needs clarification", body)
+
+    def test_logo_or_monogram(self):
+        body = self.get("/")[1]
+        self.assertIn('class="mark m', body)
+        self.assertIn(">NP<", body)
+        self.assertIn(pages.monogram("Name PA"), body)
+        self.assertIn(".idc{", (Path(pages.__file__).parent / "web" / "static" / "board.css").read_text(encoding="utf-8"))
 
     def test_header_stays(self):
         body = self.get("/")[1]
         self.assertIn('href="/modes"', body)
         self.assertIn('href="/?fresh=1"', body)
 
-    def test_old_cards_are_gone_from_home(self):
+    def test_old_extras_are_gone_from_home(self):
         self.clarify()
         body = self.get("/")[1]
-        for gone in ('id="pc-PA"', "Chats working", "chat working", "Act now"):
+        for gone in ("Act now", "Mode file", "Waiting for go", "Mail desk", "from the wiki"):
             self.assertNotIn(gone, body)
 
     def test_index_does_not_run_outside_readers(self):

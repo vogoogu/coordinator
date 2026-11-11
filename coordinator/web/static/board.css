@@ -4,7 +4,7 @@
   --font:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
   --mono:"Cascadia Mono",Consolas,ui-monospace,monospace;
   --ink:#03172B; --muted:rgba(3,23,43,.62); --sec:rgba(3,23,43,.75);
-  --line:rgba(3,23,43,.08); --line-soft:rgba(3,23,43,.06); --line-strong:rgba(3,23,43,.18);
+  --line:rgba(3,23,43,.08); --line-soft:rgba(3,23,43,.06); --line-strong:rgba(3,23,43,.18); --sep:rgba(3,23,43,.16);
   --bg:#F5F7FA; --surface:#FFFFFF; --sub:#F7F8FA; --chip:#EEF1F5;
   --link:#2A64D6;
   --red-t:#B3301A; --red-m:#E0472B; --red-bg:#FDECE8;
@@ -467,11 +467,9 @@ table.modes .act{display:flex;gap:6px}
 .og{padding:6px 18px 10px}.og .gh{font-size:15px;font-weight:650;padding:12px 0 2px}
 .og .irow:first-child{border-top:0}
 
-/* home page: the clarify list */
-.card.clarify{padding:4px 20px}
-.card.clarify .irow:first-child{border-top:0}
-.crow-proj{font-family:var(--mono);font-size:12px;color:var(--link);font-weight:600}
-.crow-proj:hover{text-decoration:underline}
+/* home page: project cards with clarify rows */
+.crow{border-top:1px solid var(--sep)}
+.idc{font-family:var(--mono);font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px;background:var(--k-hand-c);color:var(--k-hand-t)}
 .ver{padding:18px 32px;font-size:12px;color:var(--muted)}
 .report{padding:14px 0;border-top:1px solid var(--line-soft)}
 .report:first-of-type{border-top:0}
