@@ -8,7 +8,9 @@ User docs: README.md.
 - All writes go through `coordinator/core.py` (one transaction plus one event row).
   `cli.py`, `board.py`, `mcp_server.py` and `hooks.py` are thin fronts over core.
 - Never delete rows. Tasks end in a closed state; history stays.
-- The core never mentions Antson, forms, wikis, mail or Telegram.
+- The core never mentions Antson, forms, wikis, mail or Telegram. Antson lives in
+  `coordinator/antson.py` (a connector: reads the guard's files, runs its `mode.py`
+  as a command, never writes them).
 - Keep look and logic apart: web templates and CSS in `coordinator/web/`,
   the board API (logic) in `board.py`, page building (wording) in `pages.py`.
 - Refusals use three lines: WHAT, WHY, FIX (`coordinator/messages.py`).
@@ -17,7 +19,7 @@ User docs: README.md.
 
 ## Tests
 `python -m unittest discover -s tests -v` from the repo root. Tests use a
-temporary `COORDINATOR_HOME`, never the real %LOCALAPPDATA%.
+temporary `COORDINATOR_HOME`, never the real `%USERPROFILE%\.coordinator` or `~\.antson`.
 
 ## Layout
-paths, config, db, core, messages (base) -> hooks, mcp_server, board (+ pages), launcher, cli (fronts).
+paths, config, db, core, messages (base) -> antson (connector) -> hooks, mcp_server, board (+ pages), launcher, cli (fronts).

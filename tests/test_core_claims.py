@@ -62,8 +62,21 @@ class CoreClaimsTest(unittest.TestCase):
 
     # ------------------------------------------------------------ claim
 
+    def test_claim_keep_leaves_the_waiting_state(self):
+        Path(self.tmp, "kmu", ".coordinator", "project.toml").write_text(
+            'key = "KMU"\nname = "K"\nclaim = "keep"\n', encoding="utf-8")
+        t = self.task(chat("s0"))
+        self.assertEqual(t["state"], "open")
+        r = core.claim(self.conn, t["id"], "s1", now=T0)
+        self.assertEqual(r["state"], "open")
+        self.assertEqual(len(self.events(t["id"], "claim")), 1)
+        self.assertEqual(self.events(t["id"], "state"), [])
+        # the chat moves the task itself, with its own claim
+        core.set_state(self.conn, t["id"], "building", chat("s1"))
+        self.assertEqual(core.get_task(self.conn, t["id"])["state"], "building")
+
     def test_claim_moves_to_active_and_records_transcript(self):
-        t = self.task(chat("s0"))  # inbox = 1
+        t = self.task(chat("s0"), inbox=True)
         self.assertTrue(t["inbox"])
         r = core.claim(self.conn, t["id"], "s1", "C:\\t\\s1.jsonl", "C:\\work", now=T0)
         self.assertEqual(r["state"], "building")

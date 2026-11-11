@@ -1,0 +1,10 @@
+<section class="card mg" id="$anchor" aria-labelledby="$anchor-h">
+<form method="post" action="/a/modes">$token_field<input type="hidden" name="next" value="/modes">
+  <div class="mg-h"><h2 id="$anchor-h">$name</h2><span class="muted">$count</span></div>
+  <div class="tbl"><table class="modes">
+    <thead><tr><th class="ck"><input type="checkbox" data-select-all aria-label="Select all in $name"></th><th>Id</th><th>Name</th><th>Kind</th><th>Mode</th><th>Parent</th><th>Set mode</th></tr></thead>
+    <tbody>$rows</tbody>
+  </table></div>
+  <div class="mg-f"><span>Set the selected rows to</span>$bulk<span class="muted">One window for all of them when you raise.</span></div>
+</form>
+</section>

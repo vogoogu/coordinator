@@ -217,3 +217,49 @@ def cannot_start(display_id, reason):
         f"Task {display_id} was not started.",
         reason,
         "Start only tasks in a waiting state that no chat holds; release it first if needed.")
+
+
+def modes_nothing_selected():
+    return CoordinatorError(
+        "No mode was changed.",
+        "No row was selected.",
+        "Tick the rows first, or use the buttons on a single row.")
+
+
+def modes_bad_request():
+    return CoordinatorError(
+        "No mode was changed.",
+        "The request names an unknown mode or an id that is not a form or interface id.",
+        "Use the buttons on the Modes page.")
+
+
+def modes_busy():
+    return CoordinatorError(
+        "No mode was changed.",
+        "An earlier change is still waiting for your answer in its window.",
+        "Answer the window on your desktop (Yes or No), or wait for it to time out after 60 s.")
+
+
+def board_port_taken(port):
+    return CoordinatorError(
+        f"The board was not started on port {port}.",
+        "Another program is already listening on this port, most likely a board that is still running.",
+        f"Stop the other board (or use the one that is running), or start this one with --port <other port>.")
+
+
+def make_task_no_project(name):
+    return CoordinatorError(
+        f"No task was made from this item of {name}.",
+        f"{name} is not registered in the coordinator, so there is no project to put the task in.",
+        "Register the project folder first: python -m coordinator add-project <folder>")
+
+
+def make_task_exists(name, display_id):
+    return CoordinatorError(
+        "No new task was made.",
+        f"This item already became {display_id} and that task is still open.",
+        f"Open {display_id} on the board, or close it first.")
+
+
+def source_unreadable(source, reason):
+    return f"source {source} could not be read: {reason}"

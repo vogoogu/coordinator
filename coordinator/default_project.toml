@@ -2,6 +2,7 @@ key = ""            # required in each project file
 name = ""
 default_mode = "read"
 modes = ["read", "write"]          # ordered: later = more rights
+claim = "move"                    # "move": a claim starts work; "keep": the chat moves the task itself
 on_done = "review"
 on_clarify = "clarify"
 

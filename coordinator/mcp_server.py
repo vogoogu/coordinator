@@ -41,7 +41,7 @@ TOOLS = [
      "inputSchema": _schema(dict(_ID), ["id"])},
     {"name": "task_create",
      "description": ("Create a task in a project (no claim needed; at most 3 per "
-                     "session). It lands in the person's inbox. " + SID),
+                     "session). It starts in the project's first waiting state (open). " + SID),
      "inputSchema": _schema({
          **_SESSION,
          "project": _s("Project key, for example KMU."),

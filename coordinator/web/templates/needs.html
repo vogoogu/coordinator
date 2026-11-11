@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>$title</title>
+<link rel="stylesheet" href="/static/board.css"><script src="/static/board.js" defer></script></head>
+<body><div class="page">
+<header class="top">
+  <a class="back" href="/">$icon_back<span class="lbl">All projects</span></a>
+  <span class="vsep"></span>
+  <h1 class="ptitle"><span class="mark s $tint" aria-hidden="true">$mark</span>$name</h1>
+  <div class="grow"></div>
+  <span class="upd">Updated $updated</span>
+  <a class="btn" href="/needs/$urlname?fresh=1">$icon_refresh<span class="lbl">Refresh</span></a>
+</header>
+<main class="wrap" style="gap:18px">
+$notes
+$groups
+</main>
+</div></body></html>

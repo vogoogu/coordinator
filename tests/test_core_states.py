@@ -222,7 +222,7 @@ class CoreStatesTest(unittest.TestCase):
         self.assertEqual(json.loads(ev[-1]["to_value"]), ["a", "b"])
 
     def test_pin_removes_inbox_and_is_person_only(self):
-        t = self.task(chat())
+        t = self.task(chat(), inbox=True)
         self.assertTrue(t["inbox"])
         self.assertRefused(core.pin, self.conn, t["id"], chat())
         self.assertTrue(core.get_task(self.conn, t["id"])["inbox"])

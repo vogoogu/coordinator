@@ -147,7 +147,7 @@ def create_task(conn, project_key: str, title: str, actor: Actor, goal="",
         raise messages.project_config_bad(proj["root"], "no waiting state defined",
                                           "The task was not created.")
     if inbox is None:
-        inbox = actor.type == "chat"
+        inbox = False  # chat tasks go straight to the first waiting state (Daria, 2026-11-11)
     if not str(title or "").strip():
         raise messages.empty_value("the title")
     with _write(conn):
@@ -500,7 +500,8 @@ def _end_claim(conn, claim_id, now, reason):
 def claim(conn, display_id, session_id, transcript_path="", cwd="",
           now: datetime | None = None, launch: str | None = None,
           waiting_only: bool = False) -> dict | None:
-    """Claim a task for a chat session and move it to the first active state.
+    """Claim a task for a chat session and move it to the first active state
+    (unless the project's `claim` setting is "keep": the state stays as it is).
 
     `launch` is the board's launch token (COORD_LAUNCH), stored on the claim.
     With `waiting_only` (the hook's COORD_TASK path, R30) a task that is not in a
@@ -540,7 +541,8 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
             (pk, session_id, transcript_path, cwd, stamp, stamp, launch or None))
         _bump(conn, pk, stamp, inbox=0)
         _event(conn, pk, actor, "claim", None, session_id, at=stamp)
-        _move(conn, task, first.name, actor, stamp)
+        if cfg.claim != "keep":  # "keep": the chat moves the task itself
+            _move(conn, task, first.name, actor, stamp)
         _set_session(conn, session_id, last_task_update=stamp)
     return _task_by_pk(conn, pk)
 
@@ -768,6 +770,16 @@ def list_projects(conn) -> list:
 def live_claims(conn) -> dict:
     """Live claims of all tasks, keyed by task display id."""
     return {r["display_id"]: dict(r) for r in _live_claim_rows(conn)}
+
+
+def session_task(conn, session_id: str) -> dict | None:
+    """The task a chat session claimed most recently: {"task", "title", "project"} or
+    None if the coordinator does not know the session. Read only."""
+    row = conn.execute(
+        "SELECT p.key AS project, p.key || '-' || t.number AS task, t.title AS title"
+        " FROM claim c JOIN task t ON t.id = c.task_id JOIN project p ON p.id = t.project_id"
+        " WHERE c.session_id = ? ORDER BY c.id DESC LIMIT 1", (session_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def get_session_stat(conn, session_id: str) -> dict | None:

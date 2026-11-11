@@ -1,21 +1,64 @@
 """Path helpers: app home folder and Windows-safe path comparison."""
 import os
+import random
+import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
 PROJECT_FILE = os.path.join(".coordinator", "project.toml")
 
 
+def _copy_old_home(old: Path, new: Path) -> None:
+    """Copy the pre-move folder once. The copy is made next to `new` and renamed into
+    place, so a second process never sees a half-filled folder. The database goes
+    through sqlite's backup API (a consistent copy even if a hook writes meanwhile)."""
+    tmp = Path(f"{new}.copy-{os.getpid()}-{random.getrandbits(32):08x}")
+    try:
+        shutil.copytree(old, tmp, ignore=shutil.ignore_patterns(
+            "coordinator.db*", "*.lock", "*.tmp"))
+        src_db = old / "coordinator.db"
+        if src_db.is_file():
+            src = sqlite3.connect(f"file:{src_db.as_posix()}?mode=ro", uri=True)
+            dst = sqlite3.connect(tmp / "coordinator.db")
+            try:
+                src.backup(dst)
+            finally:
+                dst.close()
+                src.close()
+        os.replace(tmp, new)
+    except OSError:
+        shutil.rmtree(tmp, ignore_errors=True)  # another process won the rename, or the copy failed
+    except sqlite3.Error:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def app_home() -> Path:
-    """Folder for the database, logs and backups. Created if missing."""
+    """Folder for the database, logs and backups. Created if missing.
+
+    %USERPROFILE%\.coordinator, not %LOCALAPPDATA%: the Microsoft Store Python
+    redirects AppData\Local into its own package folder, which other programs never
+    see. The old %LOCALAPPDATA%\coordinator is copied over once on first use and left
+    untouched."""
     env = os.environ.get("COORDINATOR_HOME")
     if env:
         home = Path(env)
     else:
-        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-        home = Path(base) / "coordinator"
+        home = Path.home() / ".coordinator"
+        if not home.exists():
+            old = Path(os.environ.get("LOCALAPPDATA")
+                       or Path.home() / "AppData" / "Local") / "coordinator"
+            if old.is_dir():
+                _copy_old_home(old, home)
     home.mkdir(parents=True, exist_ok=True)
     return home
+
+
+def antson_state_dir() -> Path:
+    """Where the Antson mode guard keeps its files (modes.json, reports.jsonl, go\).
+    Read only: the board never creates it. ANTSON_STATE_DIR overrides it (tests)."""
+    env = os.environ.get("ANTSON_STATE_DIR")
+    return Path(env) if env else Path.home() / ".antson"
 
 
 def _long_name(path: str) -> str:
