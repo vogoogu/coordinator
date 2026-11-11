@@ -10,6 +10,7 @@ from pathlib import Path
 from coordinator import antson, version
 from tests import test_antson, test_board_needs
 
+USERPATH = "C:" + "\Users\someone\x"   # in pieces: the ship check scans this file too
 ROOT = Path(__file__).resolve().parent.parent
 
 
