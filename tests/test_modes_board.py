@@ -125,6 +125,7 @@ class ModesBoardTest(test_board.BoardBase):
         self.assertIn("The switch was not found", self.get("/modes")[1])
 
     # ---- Needs you
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
     def test_hash_change_shows_under_needs_you(self):
         (self.state / "modes.json").write_text('{"version": 1, "items": {}}', encoding="utf-8")
         (self.guard / "hash_bad").write_text("x")
@@ -134,6 +135,8 @@ class ModesBoardTest(test_board.BoardBase):
         (self.guard / "hash_bad").unlink()
         (self.state / "modes.json").write_text('{"version": 1, "items": {"1": {}}}', encoding="utf-8")
         self.assertNotIn("Mode file changed outside the switch", self.get("/")[1])
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_go_waiting_shows_the_numbered_list_and_the_chat_name(self):
         tid = self.task("TRIAL", "Trial build")
@@ -148,6 +151,8 @@ class ModesBoardTest(test_board.BoardBase):
         self.assertIn("go 1, 2", html)
         self.assertIn("1 thing needs you", html)
 
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
+
     def test_go_waiting_with_an_unknown_session_names_it_by_its_short_id(self):
         self.write_go("abcd1234", lists=[{"list_id": "L1", "at": "x", "items": [
             {"n": 1, "form": "625", "ref": "T-1", "what": "do it"}]}])
@@ -159,6 +164,8 @@ class ModesBoardTest(test_board.BoardBase):
             approved=[{"list_id": "L1", "n": [1], "at": "x"}])
         self.assertNotIn("waits for your go", self.get("/")[1])
 
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
+
     def test_a_refused_ready_check_shows_with_its_reason(self):
         self.write_go(ready_refused={"625": ["form-mismatch"]})
         html = self.get("/")[1]
@@ -167,6 +174,8 @@ class ModesBoardTest(test_board.BoardBase):
 
     def test_a_quiet_guard_adds_nothing_to_the_index(self):
         self.assertNotIn('id="gd-h"', self.get("/")[1])
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_new_items_get_a_card_on_the_index(self):
         self.write_modes()

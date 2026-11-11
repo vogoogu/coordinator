@@ -143,6 +143,14 @@ and use the buttons under the table to set them in one call (one confirmation wi
 - Antson projects set `default_mode = "write"` in their `project.toml` and keep
   `modes = ["read", "write"]`: the modes of forms replace per-task modes there.
 
+## Backlog ideas
+
+- **BACKLOG(home)**: since 2026-11-11 the home page lists only tasks that need clarification.
+  The old "needs you" overview (stopped chats, leases, blocked, inbox, review, mode guard,
+  wiki/desk/feedback/learnings cards) is kept commented out in `board.py` and `pages.py`,
+  and its tests are skipped, all under the marker `BACKLOG(home)`. We must come back and
+  build a proper backlog feature from it (task COORD-5). Search for `BACKLOG(home)`.
+
 ## Run the tests
 
     python -m unittest discover -s tests -v

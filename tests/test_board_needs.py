@@ -99,6 +99,8 @@ class NeedsTest(NeedsBase):
         out = self.get_json("/api/index")["outside"]
         return next((c for c in out["cards"] if c["name"] == name), None)
 
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
+
     def test_items_are_individual_with_detail_and_how_to(self):
         idx = self.get_json("/api/index")
         pa = next(p for p in idx["projects"] if p["key"] == "PA")
@@ -115,6 +117,8 @@ class NeedsTest(NeedsBase):
         self.assertNotIn("T-2", items)
         self.assertGreaterEqual(pa["needs_count"], 2)
 
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
+
     def test_project_not_in_coordinator_gets_its_own_card(self):
         c = self.card("other wiki")
         self.assertIsNotNone(c)
@@ -122,6 +126,8 @@ class NeedsTest(NeedsBase):
         status, html, _ = self.get("/")
         self.assertIn("other wiki", html)
         self.assertIn("This project is not registered in the coordinator.", html)
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_index_page_shows_quote_how_to_copy_and_make_task_escaped(self):
         status, html, _ = self.get("/")
@@ -134,6 +140,8 @@ class NeedsTest(NeedsBase):
         self.assertIn("Affects: 3 pages", html)
         self.assertIn("Email intake", html)
         self.assertIn("folder not found", html)
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_feedback_card_and_learnings(self):
         c = self.card("Companion and skills")
@@ -161,11 +169,15 @@ class NeedsTest(NeedsBase):
             self.assertIn(word, html)
         self.assertEqual(self.get("/needs/none")[0], 404)
 
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
+
     def test_failing_source_is_one_line_not_a_crash(self):
         (self.lonely / "tools" / "todo.py").write_text("import sys; sys.exit(2)", encoding="utf-8")
         status, html, _ = self.get("/")
         self.assertEqual(status, 200)
         self.assertIn("source other wiki:todo could not be read: exit 2", html)
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_detail_failure_falls_back_to_plain_command(self):
         for f in (self.proj, self.lonely):
@@ -174,6 +186,8 @@ class NeedsTest(NeedsBase):
         c = next(i for i in pa["wiki"]["items"] if i["id"] == "C22")
         self.assertEqual(c["explanation"], "")          # plain output: no detail
         self.assertEqual(pa["wiki"]["notes"], [])
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_older_data_is_shown_when_a_source_breaks_later(self):
         self.get("/")
@@ -186,6 +200,8 @@ class NeedsTest(NeedsBase):
         for f in Path(os.environ["COORDINATOR_HOME"]).rglob("*"):
             if f.is_file():
                 self.assertNotIn("Two pages disagree", f.read_bytes().decode("utf-8", "replace"), f)
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_no_sources_file_means_no_outside_cards(self):
         os.environ["COORDINATOR_SOURCES"] = str(self.fx / "none.toml")

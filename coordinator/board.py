@@ -128,49 +128,78 @@ def _need(conn, t, kind, cfg, labels, claim, now) -> dict | None:
 
 
 def api_index(conn) -> dict:
+    """The home page: the tasks that wait for an answer, i.e. every task in its project's
+    on_clarify state, oldest first. Nothing from outside the database is read here."""
     live = core.live_claims(conn)
     now = datetime.now(timezone.utc)
-    projects, needs = [], []
+    clarify = []
     for p in core.list_projects(conn):
-        cfg, cfg_error = _config_and_error(p)
+        cfg, _ = _config_and_error(p)
+        if not cfg:
+            continue
         kinds = _kinds(cfg)
-        labels = {s.name: s.label for s in cfg.states} if cfg else {}
-        counts = dict.fromkeys(KINDS, 0)
-        items = []
+        labels = {s.name: s.label for s in cfg.states}
         for t in core.list_tasks(conn, p["key"]):
-            kind = kinds.get(t["state"], "unknown")
-            counts[kind] = counts.get(kind, 0) + 1
-            item = _need(conn, t, kind, cfg, labels, live.get(t["id"]), now)
-            if item:
-                items.append(item)
-        items.sort(key=lambda i: (TONE_ORDER[i["tone"]], i["since"]))
-        needs.extend(items)
-        tone = ("red" if any(i["tone"] == "red" for i in items)
-                else "amber" if items or cfg_error else "green")
-        chats = sum(1 for tid in live if tid.rsplit("-", 1)[0].upper() == p["key"].upper())
-        projects.append({"key": p["key"], "name": p["name"], "counts": counts,
-                         "counts_text": ", ".join(f"{k} {n}" for k, n in counts.items()
-                                                  if n),
-                         "tone": tone, "needs_count": len(items), "chats": chats,
-                         "config_error": cfg_error})
-    outside = api_outside(conn, _fresh["now"])
-    by_key = {c["key"].upper(): c for c in outside["cards"] if c["key"]}
-    for p in projects:
-        card = by_key.get(p["key"].upper())
-        p["wiki"] = card
-        if card:
-            p["needs_count"] += card["me_count"]
-            if card["tone"] == "red" or (card["tone"] == "amber" and p["tone"] == "green"):
-                p["tone"] = card["tone"]
-    projects.sort(key=lambda p: (TONE_ORDER[p["tone"]], -p["needs_count"],
-                                 (p["name"] or p["key"]).lower()))
-    own = [c for c in outside["cards"] if not c["key"] and (c["items"] or c["notes"] or c.get("fixed")
-                                                             or c["tone"] != "green")]
-    own.sort(key=lambda c: (TONE_ORDER[c["tone"]], -c["me_count"], c["name"].lower()))
+            if t["state"] != cfg.on_clarify:
+                continue
+            item = _need(conn, t, kinds.get(t["state"], "unknown"), cfg, labels,
+                         live.get(t["id"]), now)
+            if item and item["state_role"] == "clarify":
+                clarify.append({**item, "project_name": p["name"] or p["key"]})
+    clarify.sort(key=lambda i: i["since"])
     return {"token": core.board_token(conn),
             "enforcement": core.get_setting(conn, "enforcement", "warn"),
-            "projects": projects, "needs_you": needs, "guard": _guard(conn),
-            "outside": {**outside, "cards": own}}
+            "clarify": clarify}
+
+
+# BACKLOG(home): the old home page (everything that "needs you": stopped chats, leases, blocked,
+# BACKLOG(home): inbox, handovers, review, mode guard, wiki/desk/feedback/learnings cards) was removed
+# BACKLOG(home): from the home page on 2026-11-11. The code below is kept, commented out. We must come
+# BACKLOG(home): back and build a proper backlog feature from it. Search for BACKLOG(home).
+# BACKLOG(home): def api_index(conn) -> dict:
+# BACKLOG(home):     live = core.live_claims(conn)
+# BACKLOG(home):     now = datetime.now(timezone.utc)
+# BACKLOG(home):     projects, needs = [], []
+# BACKLOG(home):     for p in core.list_projects(conn):
+# BACKLOG(home):         cfg, cfg_error = _config_and_error(p)
+# BACKLOG(home):         kinds = _kinds(cfg)
+# BACKLOG(home):         labels = {s.name: s.label for s in cfg.states} if cfg else {}
+# BACKLOG(home):         counts = dict.fromkeys(KINDS, 0)
+# BACKLOG(home):         items = []
+# BACKLOG(home):         for t in core.list_tasks(conn, p["key"]):
+# BACKLOG(home):             kind = kinds.get(t["state"], "unknown")
+# BACKLOG(home):             counts[kind] = counts.get(kind, 0) + 1
+# BACKLOG(home):             item = _need(conn, t, kind, cfg, labels, live.get(t["id"]), now)
+# BACKLOG(home):             if item:
+# BACKLOG(home):                 items.append(item)
+# BACKLOG(home):         items.sort(key=lambda i: (TONE_ORDER[i["tone"]], i["since"]))
+# BACKLOG(home):         needs.extend(items)
+# BACKLOG(home):         tone = ("red" if any(i["tone"] == "red" for i in items)
+# BACKLOG(home):                 else "amber" if items or cfg_error else "green")
+# BACKLOG(home):         chats = sum(1 for tid in live if tid.rsplit("-", 1)[0].upper() == p["key"].upper())
+# BACKLOG(home):         projects.append({"key": p["key"], "name": p["name"], "counts": counts,
+# BACKLOG(home):                          "counts_text": ", ".join(f"{k} {n}" for k, n in counts.items()
+# BACKLOG(home):                                                   if n),
+# BACKLOG(home):                          "tone": tone, "needs_count": len(items), "chats": chats,
+# BACKLOG(home):                          "config_error": cfg_error})
+# BACKLOG(home):     outside = api_outside(conn, _fresh["now"])
+# BACKLOG(home):     by_key = {c["key"].upper(): c for c in outside["cards"] if c["key"]}
+# BACKLOG(home):     for p in projects:
+# BACKLOG(home):         card = by_key.get(p["key"].upper())
+# BACKLOG(home):         p["wiki"] = card
+# BACKLOG(home):         if card:
+# BACKLOG(home):             p["needs_count"] += card["me_count"]
+# BACKLOG(home):             if card["tone"] == "red" or (card["tone"] == "amber" and p["tone"] == "green"):
+# BACKLOG(home):                 p["tone"] = card["tone"]
+# BACKLOG(home):     projects.sort(key=lambda p: (TONE_ORDER[p["tone"]], -p["needs_count"],
+# BACKLOG(home):                                  (p["name"] or p["key"]).lower()))
+# BACKLOG(home):     own = [c for c in outside["cards"] if not c["key"] and (c["items"] or c["notes"] or c.get("fixed")
+# BACKLOG(home):                                                              or c["tone"] != "green")]
+# BACKLOG(home):     own.sort(key=lambda c: (TONE_ORDER[c["tone"]], -c["me_count"], c["name"].lower()))
+# BACKLOG(home):     return {"token": core.board_token(conn),
+# BACKLOG(home):             "enforcement": core.get_setting(conn, "enforcement", "warn"),
+# BACKLOG(home):             "projects": projects, "needs_you": needs, "guard": _guard(conn),
+# BACKLOG(home):             "outside": {**outside, "cards": own}}
 
 
 # ------------------------------------------------------------------ needs from outside (wikis, feedback, desk)

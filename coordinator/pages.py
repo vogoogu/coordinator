@@ -163,36 +163,40 @@ def _need_row(i: dict, token: str, now: datetime) -> Raw:
                   detail=_need_detail(i, now))
 
 
-def _project_card(p: dict, items: list, token: str, now: datetime) -> Raw:
-    tone, status_icon, status = PROJECT_LOOK[p["tone"]]
-    rows = [_need_row(i, token, now) for i in items[:INDEX_ROWS]]
-    wiki = p.get("wiki")
-    if wiki:
-        rows.append(_out_rows(wiki, token, "/"))
-        if wiki["me_count"] > OUT_ROWS:
-            rows.append(Raw(f'<a class="more" href="/needs/{quote(wiki["name"], safe="")}">'
-                            f'{wiki["me_count"] - OUT_ROWS} more from the wiki</a>'))
-    if len(items) > INDEX_ROWS:
-        rows.append(render("_card_more.html", key=p["key"],
-                           text=f"{len(items) - INDEX_ROWS} more on the board"))
-    if p["config_error"]:
-        rows.insert(0, render("_card_config_error.html", icon=icon("config-error", ""),
-                              error=p["config_error"]))
-    body = (Raw("<div>" + "".join(rows) + "</div>") if rows
-            else render("_card_quiet.html", icon=icon("circle-check", "")))
-    n = p["chats"]
-    chats = render("_chats.html", muted="" if n else "muted",
-                   live=render("_live.html") if n else "",
-                   text=f"{n} chat{'s' if n != 1 else ''} working" if n
-                   else "No chat working")
-    count = p["needs_count"]
-    return render("_project_card.html", tone=f"{tone}", key=p["key"],
-                  name=p["name"] or p["key"],
-                  monogram=_logo(p["key"]) or _logo((wiki or {}).get("name", "")) or monogram(p["name"] or p["key"]),
-                  tint=_tint(p["key"]), status_icon=icon(status_icon), status=status,
-                  count=count, count_class="" if count else "zero",
-                  count_word="needs you" if count == 1 else "need you",
-                  body=body, chats=chats, icon_chevron=icon("chevron-right"))
+# BACKLOG(home): the old home page (everything that "needs you": project cards, mode guard, wiki/desk/
+# BACKLOG(home): feedback/learnings cards, status strip) was removed from the home page on 2026-11-11.
+# BACKLOG(home): The code is kept, commented out. We must come back and build a proper backlog feature
+# BACKLOG(home): from it (blocked, stopped, lease, inbox, review, mode guard, wiki/desk items).
+# BACKLOG(home): def _project_card(p: dict, items: list, token: str, now: datetime) -> Raw:
+# BACKLOG(home):     tone, status_icon, status = PROJECT_LOOK[p["tone"]]
+# BACKLOG(home):     rows = [_need_row(i, token, now) for i in items[:INDEX_ROWS]]
+# BACKLOG(home):     wiki = p.get("wiki")
+# BACKLOG(home):     if wiki:
+# BACKLOG(home):         rows.append(_out_rows(wiki, token, "/"))
+# BACKLOG(home):         if wiki["me_count"] > OUT_ROWS:
+# BACKLOG(home):             rows.append(Raw(f'<a class="more" href="/needs/{quote(wiki["name"], safe="")}">'
+# BACKLOG(home):                             f'{wiki["me_count"] - OUT_ROWS} more from the wiki</a>'))
+# BACKLOG(home):     if len(items) > INDEX_ROWS:
+# BACKLOG(home):         rows.append(render("_card_more.html", key=p["key"],
+# BACKLOG(home):                            text=f"{len(items) - INDEX_ROWS} more on the board"))
+# BACKLOG(home):     if p["config_error"]:
+# BACKLOG(home):         rows.insert(0, render("_card_config_error.html", icon=icon("config-error", ""),
+# BACKLOG(home):                               error=p["config_error"]))
+# BACKLOG(home):     body = (Raw("<div>" + "".join(rows) + "</div>") if rows
+# BACKLOG(home):             else render("_card_quiet.html", icon=icon("circle-check", "")))
+# BACKLOG(home):     n = p["chats"]
+# BACKLOG(home):     chats = render("_chats.html", muted="" if n else "muted",
+# BACKLOG(home):                    live=render("_live.html") if n else "",
+# BACKLOG(home):                    text=f"{n} chat{'s' if n != 1 else ''} working" if n
+# BACKLOG(home):                    else "No chat working")
+# BACKLOG(home):     count = p["needs_count"]
+# BACKLOG(home):     return render("_project_card.html", tone=f"{tone}", key=p["key"],
+# BACKLOG(home):                   name=p["name"] or p["key"],
+# BACKLOG(home):                   monogram=_logo(p["key"]) or _logo((wiki or {}).get("name", "")) or monogram(p["name"] or p["key"]),
+# BACKLOG(home):                   tint=_tint(p["key"]), status_icon=icon(status_icon), status=status,
+# BACKLOG(home):                   count=count, count_class="" if count else "zero",
+# BACKLOG(home):                   count_word="needs you" if count == 1 else "need you",
+# BACKLOG(home):                   body=body, chats=chats, icon_chevron=icon("chevron-right"))
 
 
 def _guard_chat(c: dict) -> str:
@@ -224,21 +228,21 @@ def _guard_row(n: dict, now: datetime) -> Raw:
                   detail="Reason: " + ", ".join(n["reasons"]))
 
 
-def _guard_card(g: dict, now: datetime) -> Raw:
-    needs = g["needs"]
-    tone = ("red" if any(n["tone"] == "red" for n in needs)
-            else "amber" if needs or g["new"] else "green")
-    pill, status_icon, status = PROJECT_LOOK[tone]
-    rows = [_guard_row(n, now) for n in needs]
-    count = len(needs)
-    new = g["new"]
-    return render("_guard_card.html", tone=pill, icon_mark=Raw(icon("sliders", "")),
-                  status_icon=icon(status_icon), status=status, count=count,
-                  count_class="" if count else "zero",
-                  count_word="needs you" if count == 1 else "need you",
-                  rows=Raw("".join(rows)),
-                  new_text=(f"{_plural(new, 'new item')} from chats" if new else "Nothing new"),
-                  icon_chevron=icon("chevron-right"))
+# BACKLOG(home): def _guard_card(g: dict, now: datetime) -> Raw:
+# BACKLOG(home):     needs = g["needs"]
+# BACKLOG(home):     tone = ("red" if any(n["tone"] == "red" for n in needs)
+# BACKLOG(home):             else "amber" if needs or g["new"] else "green")
+# BACKLOG(home):     pill, status_icon, status = PROJECT_LOOK[tone]
+# BACKLOG(home):     rows = [_guard_row(n, now) for n in needs]
+# BACKLOG(home):     count = len(needs)
+# BACKLOG(home):     new = g["new"]
+# BACKLOG(home):     return render("_guard_card.html", tone=pill, icon_mark=Raw(icon("sliders", "")),
+# BACKLOG(home):                   status_icon=icon(status_icon), status=status, count=count,
+# BACKLOG(home):                   count_class="" if count else "zero",
+# BACKLOG(home):                   count_word="needs you" if count == 1 else "need you",
+# BACKLOG(home):                   rows=Raw("".join(rows)),
+# BACKLOG(home):                   new_text=(f"{_plural(new, 'new item')} from chats" if new else "Nothing new"),
+# BACKLOG(home):                   icon_chevron=icon("chevron-right"))
 
 
 # ------------------------------------------------------------------ needs from outside
@@ -344,40 +348,40 @@ def _out_count(card: dict, l) -> int:
     return card["me_count"] + (1 if card.get("fixed") and l and l["exists"] and l["count"] else 0)
 
 
-def _out_card(card: dict, l, token: str) -> Raw:
-    tone, status_icon, status = PROJECT_LOOK[card["tone"]]
-    count = _out_count(card, l)
-    name = CARD_NAMES.get(card["name"], card["name"])
-    rows = Raw((str(_learnings_row(l)) if card.get("fixed") else "") + str(_out_rows(card, token, "/")))
-    more = card["me_count"] - OUT_ROWS
-    other = sum(1 for i in card["items"] if i["group"] != "me")
-    foot = (f"{more} more on the card's page" if more > 0
-            else f"{other} waiting for others or the build" if other else "Nothing else waiting")
-    return render("_out_card.html", tone=tone, anchor=quote(card["name"]), urlname=quote(card["name"], safe=""),
-                  name=name, mark=_logo(name, bool(card.get("fixed"))) or monogram(name), tint=_tint(card["name"]),
-                  status_icon=icon(status_icon), status=status, count=count, count_class="" if count else "zero",
-                  count_word="needs you" if count == 1 else "need you", rows=rows, foot=foot,
-                  icon_chevron=icon("chevron-right"))
+# BACKLOG(home): def _out_card(card: dict, l, token: str) -> Raw:
+# BACKLOG(home):     tone, status_icon, status = PROJECT_LOOK[card["tone"]]
+# BACKLOG(home):     count = _out_count(card, l)
+# BACKLOG(home):     name = CARD_NAMES.get(card["name"], card["name"])
+# BACKLOG(home):     rows = Raw((str(_learnings_row(l)) if card.get("fixed") else "") + str(_out_rows(card, token, "/")))
+# BACKLOG(home):     more = card["me_count"] - OUT_ROWS
+# BACKLOG(home):     other = sum(1 for i in card["items"] if i["group"] != "me")
+# BACKLOG(home):     foot = (f"{more} more on the card's page" if more > 0
+# BACKLOG(home):             else f"{other} waiting for others or the build" if other else "Nothing else waiting")
+# BACKLOG(home):     return render("_out_card.html", tone=tone, anchor=quote(card["name"]), urlname=quote(card["name"], safe=""),
+# BACKLOG(home):                   name=name, mark=_logo(name, bool(card.get("fixed"))) or monogram(name), tint=_tint(card["name"]),
+# BACKLOG(home):                   status_icon=icon(status_icon), status=status, count=count, count_class="" if count else "zero",
+# BACKLOG(home):                   count_word="needs you" if count == 1 else "need you", rows=rows, foot=foot,
+# BACKLOG(home):                   icon_chevron=icon("chevron-right"))
 
 
-def _strip(out: dict, now: datetime) -> Raw:
-    parts = []
-    for f in out["strip"]:
-        if "text" in f:
-            val = f["text"]
-        elif "digest" in f:
-            val = f"last ran {f['digest'][:16].replace('T', ' ')}" if f["digest"] else "has not run yet"
-        elif not f["exists"]:
-            val = "folder not found"
-        elif not f["count"]:
-            val = "no files yet"
-        else:
-            days = (now - datetime.fromisoformat(f["newest"])).days if f["newest"] else None
-            when = "unknown" if days is None else "today" if days < 1 else f"{_days(days)} ago"
-            val = f"{f['count']} file{'s' if f['count'] != 1 else ''}, newest {when}"
-        parts.append(f"<span><b>{escape(f['name'])}</b>{escape(val)}</span>")
-    parts += [f"<span><b>Warning</b>{escape(w)}</span>" for w in out["warnings"]]
-    return render("_out_strip.html", items=Raw("".join(parts))) if parts else Raw("")
+# BACKLOG(home): def _strip(out: dict, now: datetime) -> Raw:
+# BACKLOG(home):     parts = []
+# BACKLOG(home):     for f in out["strip"]:
+# BACKLOG(home):         if "text" in f:
+# BACKLOG(home):             val = f["text"]
+# BACKLOG(home):         elif "digest" in f:
+# BACKLOG(home):             val = f"last ran {f['digest'][:16].replace('T', ' ')}" if f["digest"] else "has not run yet"
+# BACKLOG(home):         elif not f["exists"]:
+# BACKLOG(home):             val = "folder not found"
+# BACKLOG(home):         elif not f["count"]:
+# BACKLOG(home):             val = "no files yet"
+# BACKLOG(home):         else:
+# BACKLOG(home):             days = (now - datetime.fromisoformat(f["newest"])).days if f["newest"] else None
+# BACKLOG(home):             when = "unknown" if days is None else "today" if days < 1 else f"{_days(days)} ago"
+# BACKLOG(home):             val = f"{f['count']} file{'s' if f['count'] != 1 else ''}, newest {when}"
+# BACKLOG(home):         parts.append(f"<span><b>{escape(f['name'])}</b>{escape(val)}</span>")
+# BACKLOG(home):     parts += [f"<span><b>Warning</b>{escape(w)}</span>" for w in out["warnings"]]
+# BACKLOG(home):     return render("_out_strip.html", items=Raw("".join(parts))) if parts else Raw("")
 
 
 def page_needs(d) -> Raw:
@@ -403,43 +407,73 @@ def page_needs(d) -> Raw:
                  notes=Raw("".join(map(str, notes))), groups=Raw("".join(map(str, groups))))
 
 
+CLARIFY_NONE = "No task needs clarification."
+
+
+def _clarify_row(i: dict, now: datetime) -> Raw:
+    """One waiting question: ID, title, project, the chat's last comment, how long it waited."""
+    return render("_clarify_row.html", icon=icon(ROLE_ICON["clarify"]), label=i["state_label"],
+                  age=_age(i["since"], now), id=i["id"], title=i["title"], project=i["project"],
+                  project_name=i["project_name"],
+                  detail=i["note"] or f"Waiting in {i['state_label']}.")
+
+
 def page_index(d) -> Raw:
     now = datetime.now().astimezone()
-    projects, needs = d["projects"], d["needs_you"]
-    guard = d.get("guard") or {"needs": [], "new": 0}
-    out = d.get("outside") or {"cards": [], "strip": [], "learnings": None, "warnings": []}
-    by_project = {}
-    for i in needs:
-        by_project.setdefault(i["project"], []).append(i)
-    own = [_out_card(c, out["learnings"], d["token"]) for c in out["cards"]]
-    cards = Raw(("".join([_guard_card(guard, now)]) if guard["needs"] or guard["new"] else "")
-                + "".join(_project_card(p, by_project.get(p["key"], []), d["token"], now)
-                          for p in projects) + "".join(own))
-    g = len(guard["needs"])
-    wiki_n = sum(p["wiki"]["me_count"] for p in projects if p.get("wiki"))
-    outside_n = sum(_out_count(c, out["learnings"]) for c in out["cards"])
-    total, n = len(needs) + g + wiki_n + outside_n, len(projects)
-    if not projects and not total and not own:
-        summary = render("_index_empty.html", icon=icon("folder", "lg"))
-    elif not total:
-        quiet = "Your project is quiet." if n == 1 and not own else f"All {n + len(own)} projects are quiet."
-        summary = render("_index_quiet.html", icon=icon("circle-check", "lg"), text=quiet)
-    else:
-        busy = sum(1 for p in projects if p["needs_count"]) + sum(1 for c in out["cards"] if _out_count(c, out["learnings"]))
-        n += len(out["cards"])
+    items = d["clarify"]
+    if items:
+        n = len(items)
         summary = render("_index_heading.html",
-                         headline="1 thing needs you" if total == 1
-                         else f"{total} things need you",
-                         where=(f"in {busy} of {n} project{'s' if n != 1 else ''}"
-                                + (" and the mode guard" if g else "") if busy or not g
-                                else "in the mode guard"))
-    summary = Raw(str(summary) + str(_strip(out, now)))
+                         headline="1 task needs clarification" if n == 1 else f"{n} tasks need clarification",
+                         where="oldest first")
+        rows = Raw('<section class="card clarify">' + "".join(_clarify_row(i, now) for i in items) + "</section>")
+    else:
+        summary = render("_index_quiet.html", icon=icon("circle-check", "lg"), text=CLARIFY_NONE)
+        rows = Raw("")
     return _page("index.html", "Coordinator", d["token"],
                  date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
                  updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),
-                 icon_modes=icon("sliders", ""), summary=summary, cards=cards)
+                 icon_modes=icon("sliders", ""), summary=summary, rows=rows)
 
 
+# BACKLOG(home): (old page_index)
+# BACKLOG(home): def page_index(d) -> Raw:
+# BACKLOG(home):     now = datetime.now().astimezone()
+# BACKLOG(home):     projects, needs = d["projects"], d["needs_you"]
+# BACKLOG(home):     guard = d.get("guard") or {"needs": [], "new": 0}
+# BACKLOG(home):     out = d.get("outside") or {"cards": [], "strip": [], "learnings": None, "warnings": []}
+# BACKLOG(home):     by_project = {}
+# BACKLOG(home):     for i in needs:
+# BACKLOG(home):         by_project.setdefault(i["project"], []).append(i)
+# BACKLOG(home):     own = [_out_card(c, out["learnings"], d["token"]) for c in out["cards"]]
+# BACKLOG(home):     cards = Raw(("".join([_guard_card(guard, now)]) if guard["needs"] or guard["new"] else "")
+# BACKLOG(home):                 + "".join(_project_card(p, by_project.get(p["key"], []), d["token"], now)
+# BACKLOG(home):                           for p in projects) + "".join(own))
+# BACKLOG(home):     g = len(guard["needs"])
+# BACKLOG(home):     wiki_n = sum(p["wiki"]["me_count"] for p in projects if p.get("wiki"))
+# BACKLOG(home):     outside_n = sum(_out_count(c, out["learnings"]) for c in out["cards"])
+# BACKLOG(home):     total, n = len(needs) + g + wiki_n + outside_n, len(projects)
+# BACKLOG(home):     if not projects and not total and not own:
+# BACKLOG(home):         summary = render("_index_empty.html", icon=icon("folder", "lg"))
+# BACKLOG(home):     elif not total:
+# BACKLOG(home):         quiet = "Your project is quiet." if n == 1 and not own else f"All {n + len(own)} projects are quiet."
+# BACKLOG(home):         summary = render("_index_quiet.html", icon=icon("circle-check", "lg"), text=quiet)
+# BACKLOG(home):     else:
+# BACKLOG(home):         busy = sum(1 for p in projects if p["needs_count"]) + sum(1 for c in out["cards"] if _out_count(c, out["learnings"]))
+# BACKLOG(home):         n += len(out["cards"])
+# BACKLOG(home):         summary = render("_index_heading.html",
+# BACKLOG(home):                          headline="1 thing needs you" if total == 1
+# BACKLOG(home):                          else f"{total} things need you",
+# BACKLOG(home):                          where=(f"in {busy} of {n} project{'s' if n != 1 else ''}"
+# BACKLOG(home):                                 + (" and the mode guard" if g else "") if busy or not g
+# BACKLOG(home):                                 else "in the mode guard"))
+# BACKLOG(home):     summary = Raw(str(summary) + str(_strip(out, now)))
+# BACKLOG(home):     return _page("index.html", "Coordinator", d["token"],
+# BACKLOG(home):                  date=f"{WEEKDAYS[now.weekday()]}, {now:%d.%m.%Y}",
+# BACKLOG(home):                  updated=f"{now:%H:%M}", icon_refresh=icon("refresh", ""),
+# BACKLOG(home):                  icon_modes=icon("sliders", ""), summary=summary, cards=cards)
+# BACKLOG(home):
+# BACKLOG(home):
 
 
 # ------------------------------------------------------------------ shared bits

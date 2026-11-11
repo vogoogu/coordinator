@@ -466,3 +466,9 @@ table.modes .act{display:flex;gap:6px}
 .outstrip b{color:var(--sec);font-weight:600;margin-right:4px}
 .og{padding:6px 18px 10px}.og .gh{font-size:15px;font-weight:650;padding:12px 0 2px}
 .og .irow:first-child{border-top:0}
+
+/* home page: the clarify list */
+.card.clarify{padding:4px 20px}
+.card.clarify .irow:first-child{border-top:0}
+.crow-proj{font-family:var(--mono);font-size:12px;color:var(--link);font-weight:600}
+.crow-proj:hover{text-decoration:underline}
