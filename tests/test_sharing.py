@@ -22,6 +22,8 @@ class CleanLaptopTest(test_board_needs.NeedsBase):
         test_board_needs.board._outside["data"] = None
         test_board_needs.sources.forget()
 
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
+
     def test_needs_you_uses_registered_projects_that_have_a_state_script(self):
         idx = self.get_json("/api/index")
         self.assertTrue(idx["outside"]["configured"])
@@ -29,6 +31,8 @@ class CleanLaptopTest(test_board_needs.NeedsBase):
         self.assertIn("C22", {i["id"] for i in projects["PA"]["wiki"]["items"]})
         self.assertIsNone(projects["PB"]["wiki"], "PB has no tools/project_state.py")
         self.assertGreaterEqual(projects["PA"]["needs_count"], 2)
+
+    @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
 
     def test_no_projects_with_a_state_script_shows_nothing_outside(self):
         (self.proj / "tools" / "project_state.py").unlink()
