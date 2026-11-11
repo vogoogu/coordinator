@@ -71,6 +71,13 @@ def load_registry(path: str) -> list:
     return out
 
 
+def own_projects(coord_projects: list) -> list:
+    """The board's registered projects that have their own tools/project_state.py, in the
+    shape of load_registry. Used when sources.toml names no registry."""
+    return [{"name": p["name"], "project_dir": p["root"]} for p in coord_projects
+            if os.path.isfile(os.path.join(p["root"], "tools", "project_state.py"))]
+
+
 def coordinator_key(project_dir, coord_projects: list):
     """The coordinator project that lives in this folder, or None."""
     if not project_dir:

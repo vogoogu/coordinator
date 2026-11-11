@@ -99,7 +99,7 @@ class ModesFileTest(GuardFilesCase):
 
     def test_mode_py_setting_order(self):
         os.environ.pop("COORDINATOR_GUARD_MODE_PY")
-        self.assertEqual(antson.mode_py_path(), antson.DEFAULT_MODE_PY)
+        self.assertEqual(antson.mode_py_path(), "", "no hard-coded default: nothing set, nothing registered")
         home = Path(os.environ["COORDINATOR_HOME"])
         home.mkdir(parents=True, exist_ok=True)
         (home / "antson.toml").write_text('mode_py = "D:\\\\proj\\\\mode.py"\n', encoding="utf-8")

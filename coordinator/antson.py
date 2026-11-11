@@ -19,11 +19,11 @@ import tomllib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import paths
+from . import core, db, paths
 
 MODES = ("read", "dev", "prod")
 RANK = {"read": 0, "prod": 1, "dev": 2}             # the guard's order
-DEFAULT_MODE_PY = r"C:\Projects\_mail-desk\tools\guard\mode.py"
+GUARD_IN_PROJECT = os.path.join("tools", "chrome_guard", "guard", "mode.py")
 SETTINGS_FILE = "antson.toml"                       # in the app home: mode_py = "<path>"
 INTAKE_FILE = "reports-intake.json"
 MAX_INTAKE = 5000
@@ -34,9 +34,28 @@ _lock = threading.Lock()
 
 
 # ------------------------------------------------------------------ where things are
+def _registered_guard() -> str:
+    """The mode.py of the first registered project that has one ("" if none). Modes live
+    per laptop, so any project's copy reads and writes the same state."""
+    try:
+        conn = db.connect()
+        try:
+            roots = [p["root"] for p in core.list_projects(conn)]
+        finally:
+            conn.close()
+    except Exception:                       # no database yet: nothing registered
+        return ""
+    for root in roots:
+        candidate = os.path.join(root, GUARD_IN_PROJECT)
+        if os.path.isfile(candidate):
+            return candidate
+    return ""
+
+
 def mode_py_path() -> str:
-    """The guard's mode.py: env COORDINATOR_GUARD_MODE_PY, else `mode_py` in
-    antson.toml in the app home, else the mail desk's copy."""
+    """The guard's mode.py: env COORDINATOR_GUARD_MODE_PY, else `mode_py` in antson.toml
+    in the app home, else the first registered project that has
+    tools/chrome_guard/guard/mode.py, else "" (not found)."""
     env = os.environ.get("COORDINATOR_GUARD_MODE_PY")
     if env:
         return env
@@ -47,7 +66,7 @@ def mode_py_path() -> str:
             return value.strip()
     except (OSError, tomllib.TOMLDecodeError):
         pass
-    return DEFAULT_MODE_PY
+    return _registered_guard()
 
 
 def _read_json(path: Path):

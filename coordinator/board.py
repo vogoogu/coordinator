@@ -250,10 +250,13 @@ def _outside_card(name, key, folder, items, extra) -> dict:
 def _read_outside(coord: list) -> dict:
     cfg = sources.settings()
     empty = {"configured": False, "cards": [], "strip": [], "learnings": None, "warnings": []}
-    if not cfg:
-        return empty
     now = datetime.now().astimezone()
-    registry = wiki.load_registry(cfg.get("registry", "")) if cfg.get("registry") else []
+    if cfg.get("registry"):
+        registry = wiki.load_registry(cfg["registry"])
+    else:                       # no mail desk: the board's own projects that have a state script
+        registry = wiki.own_projects(coord)
+    if not cfg and not registry:
+        return empty
     state_script = cfg.get("state_script", "")
     fb, dk = feedback.spec(cfg.get("feedback") or {}), desk.specs(cfg.get("desk") or {})
     specs = [s for e in registry if e["project_dir"] for s in wiki.specs(e["name"], e["project_dir"], state_script)]

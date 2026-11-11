@@ -202,9 +202,9 @@ class NeedsTest(NeedsBase):
                 self.assertNotIn("Two pages disagree", f.read_bytes().decode("utf-8", "replace"), f)
 
     @unittest.skip("BACKLOG(home): old home page content, see README Backlog ideas")
-
-    def test_no_sources_file_means_no_outside_cards(self):
+    def test_no_sources_file_and_no_state_script_means_no_outside_cards(self):
         os.environ["COORDINATOR_SOURCES"] = str(self.fx / "none.toml")
+        (self.proj / "tools" / "project_state.py").unlink()     # registered projects with one are shown, see test_sharing
         board._outside["data"] = None
         out = self.get_json("/api/index")["outside"]
         self.assertFalse(out["configured"])
