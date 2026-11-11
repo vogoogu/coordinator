@@ -417,6 +417,18 @@ class BoardTest(BoardBase):
         self.assertEqual([i["id"] for i in items], [tid])
         self.assertIn("lease", items[0]["reasons"][0])
 
+    def test_a_silent_claim_shows_quiet_not_working(self):          # COORD-8
+        tid = self.task()
+        core.claim(self.conn, tid, "sess-quiet")
+        old = (datetime.now(timezone.utc) - timedelta(minutes=25)).isoformat(timespec="seconds")
+        self.conn.execute("UPDATE claim SET last_seen = ? WHERE session_id = ?",
+                          (old, "sess-quiet"))
+        body = self.get("/p/PA")[1]
+        self.assertIn("Chat sess quiet for 25 min, may have stopped", body)
+        self.assertNotIn("Chat sess working", body)
+        core.touch(self.conn, "sess-quiet", "mcp__claude-in-chrome__computer")
+        self.assertIn("Chat sess working", self.get("/p/PA")[1])
+
     def test_card_shows_holder_and_blocked_once(self):
         tid = self.task()
         core.claim(self.conn, tid, "sess-9")

@@ -57,6 +57,7 @@ def _card(conn, task: dict, live: dict, cfg, kinds: dict, labels: dict, now) -> 
             "state": task["state"], "kind": kind,
             "holder": claim["session_id"] if claim else "",
             "holder_since": claim["started"] if claim else "",
+            "holder_seen": claim["last_seen"] if claim else "",
             "blocked": task["blocked"] or "", "open_points": task["open_points"],
             "since": task["updated"], "why": need["why"] if need else "",
             "note": (need or {}).get("note", ""), "note_kind": (need or {}).get("note_kind", "")}

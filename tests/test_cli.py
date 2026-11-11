@@ -269,7 +269,7 @@ class CliTest(unittest.TestCase):
         post = hooks["PostToolUse"][0]["matcher"].split("|")
         self.assertIn("Write", post)
         self.assertIn("Bash", post)
-        self.assertFalse(any(t.startswith("mcp__") for t in post))
+        self.assertIn("mcp__.*", post)      # COORD-8: browser-only chats must show activity
         cmd = hooks["Stop"][0]["hooks"][0]
         self.assertEqual(cmd["timeout"], 30)
         self.assertTrue(cmd["command"].startswith('python "'))

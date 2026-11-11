@@ -10,10 +10,11 @@ from pathlib import Path
 from . import antson, config, core, db, messages, notify, paths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-# PostToolUse is the lease heartbeat. Built-in tools only: MCP tools (browser
-# steps above all) are the most frequent calls, and each hook run costs ~0.6 s.
+# PostToolUse is the lease heartbeat. MCP tools are included: a chat that works only
+# through browser tools (COORD-8) would otherwise never show activity and look "working"
+# for the whole lease. Each hook run costs ~0.6 s; core.touch skips the coordinator's own.
 POST_TOOL_MATCHER = ("Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|PowerShell"
-                     "|WebFetch|WebSearch|Agent|Task")
+                     "|WebFetch|WebSearch|Agent|Task|mcp__.*")
 HOOK_EVENTS = (
     ("SessionStart", None, "session-start"),
     ("PreToolUse", "Write|Edit|MultiEdit|NotebookEdit", "pre-tool"),

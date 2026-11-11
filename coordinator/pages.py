@@ -486,6 +486,7 @@ KIND_LOOK = {  # kind -> (css class, icon, word); every status has an icon and a
     "unknown": ("k-clo", "config-error", "Unknown kind"),
 }
 FINAL = ("finished", "closed")
+QUIET_AFTER = timedelta(minutes=10)   # a live claim with no activity this long is "quiet"
 RECENT = timedelta(days=7)    # finished and closed columns show this much by default
 
 
@@ -543,9 +544,15 @@ def _task_card(c: dict, modes: list, token: str, here: str, now: datetime) -> Ra
     final = c["kind"] in FINAL
     metas = []
     if c["holder"]:
-        metas.append(render("_meta.html", title=c["holder"], lead=render("_live.html"),
-                            text=f"Chat {_short(c['holder'])} working · "
-                                 f"{_span(now - _when(c['holder_since']))}"))
+        silent = now - _when(c["holder_seen"] or c["holder_since"])
+        if silent > QUIET_AFTER:
+            metas.append(render("_meta.html", title=c["holder"], lead="",
+                                text=f"Chat {_short(c['holder'])} quiet for "
+                                     f"{_span(silent)}, may have stopped"))
+        else:
+            metas.append(render("_meta.html", title=c["holder"], lead=render("_live.html"),
+                                text=f"Chat {_short(c['holder'])} working · "
+                                     f"{_span(now - _when(c['holder_since']))}"))
     if c["why"] in URGENT_LOOK and not final:
         metas.append(render("_meta_pill.html", pill=_pill("red pw", *URGENT_LOOK[c["why"]])))
     if c["blocked"] and not final:
@@ -734,8 +741,11 @@ def _details(t: dict) -> Raw:
                         row("Origin", origin, "")]))
 
 
-def _chat_row(c: dict) -> Raw:
-    if c["ended"] is None:
+def _chat_row(c: dict, now: datetime) -> Raw:
+    if c["ended"] is None and now - _when(c["last_seen"]) > QUIET_AFTER:
+        pill = render("_pill.html", cls="amb", icon="",
+                      text=f"Quiet for {_span(now - _when(c['last_seen']))}")
+    elif c["ended"] is None:
         pill = render("_pill.html", cls="k-act", icon=render("_live.html"), text="Working")
     else:
         pill = _pill(*CLAIM_LOOK.get(c["end_reason"],
@@ -847,7 +857,7 @@ def page_task(d, error=None) -> Raw:
     history = t["history"]
     timeline = Raw("".join(_event(e, labels, d["modes"], now) for e in reversed(history)))
     claims = list(reversed(t["claims"]))
-    chats = (Raw("".join(_chat_row(c) for c in claims)) if claims
+    chats = (Raw("".join(_chat_row(c, now) for c in claims)) if claims
              else render("_empty_small.html", text="No chat has worked on this task yet."))
     name = p["name"] or p["key"]
     return _page("task.html", f"{t['id']} {t['title']}", d["token"], key=p["key"],
