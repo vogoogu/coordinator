@@ -19,8 +19,21 @@ class Raw(str):
     """Already-rendered HTML; everything else is escaped on substitution."""
 
 
+_files: dict = {}
+
+
+def _read(path) -> str:
+    """Template and icon files are read once per change: opening 150 small files per page
+    took seconds on this machine. A changed file (new modified time) is read again."""
+    stamp = path.stat().st_mtime_ns
+    hit = _files.get(path)
+    if hit is None or hit[0] != stamp:
+        hit = _files[path] = (stamp, path.read_text(encoding="utf-8"))
+    return hit[1]
+
+
 def render(name: str, /, **values) -> Raw:
-    text = (TEMPLATE_DIR / name).read_text(encoding="utf-8")
+    text = _read(TEMPLATE_DIR / name)
     safe = {k: v if isinstance(v, Raw) else escape("" if v is None else str(v))
             for k, v in values.items()}
     return Raw(Template(text).substitute(safe))
@@ -47,7 +60,7 @@ def _page(template, /, title, token="", **values) -> Raw:
 
 def icon(name: str, size: str = "sm") -> Raw:
     """Inline stroke icon from web/icons (decorative: the words next to it carry the meaning)."""
-    shape = (ICON_DIR / f"{name}.svg").read_text(encoding="utf-8").strip()
+    shape = _read(ICON_DIR / f"{name}.svg").strip()
     cls = f"ic {size}".strip()
     return Raw(f'<svg class="{cls}" viewBox="0 0 24 24" aria-hidden="true">{shape}</svg>')
 

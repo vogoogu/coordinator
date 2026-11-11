@@ -293,10 +293,25 @@ def _read_outside(coord: list) -> dict:
 def api_outside(conn, fresh: bool = False) -> dict:
     """What waits for Daria outside the task database, read live. One short in-memory
     cache so a page load does not start every source each time; nothing is written to disk."""
+    import threading
     import time
-    if fresh or _outside["data"] is None or time.monotonic() - _outside["at"] > OUTSIDE_TTL:
+    stale = time.monotonic() - _outside["at"] > OUTSIDE_TTL
+    if fresh or _outside["data"] is None:           # first load or "Refresh": wait for the answer
         _outside["data"] = _read_outside(core.list_projects(conn))
         _outside["at"] = time.monotonic()
+    elif stale and not _outside.get("busy"):         # going back to the page: show the last answer now,
+        _outside["busy"] = True                      # read again in the background for the next load
+        coord = core.list_projects(conn)
+
+        def reload():
+            try:
+                _outside["data"] = _read_outside(coord)
+                _outside["at"] = time.monotonic()
+            except Exception:
+                pass                                 # keep the older answer
+            finally:
+                _outside["busy"] = False
+        threading.Thread(target=reload, daemon=True).start()
     return _outside["data"]
 
 
