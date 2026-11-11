@@ -1,6 +1,44 @@
 # Home page: only tasks that need clarification: design
 
-Date: 2026-11-11. Status: draft, awaiting Daria's read.
+Date: 2026-11-11. Status: **revision 1** (same day). Revision 1 replaces the flat list
+of the first version, which COORD-4 built. Daria saw it and said: a project with nothing
+to clarify (COORD) vanished, so she could not see all connected projects. The home page
+must keep the **project cards with logos and to-do rows as before**; only the content
+changes to clarify items.
+
+## Revision 1: what changes (this section wins over the rest where they differ)
+
+- **One card per connected project, always.** Every project registered in the
+  coordinator (today TRY, KMU, COORD) gets a card, also when it has nothing to clarify.
+  A project never disappears from home.
+- **Same look as before the rework.** Masonry of cards (`.masonry`), the logo or
+  monogram and tint (`_logo`, `monogram`, `_tint`), the project name linking to
+  `/p/<key>`, the status pill, the count ("2 need you"), the footer with chats working
+  and "Open board". This is the old `_project_card` and `_project_card.html`, restored
+  and adapted, not a new design.
+- **Content of a card = only its clarify tasks**, as to-do rows (the old `_need_row`
+  look: question icon, "Needs clarification" label, age, ID, title, the chat's question
+  as detail, link to `/t/<id>`). Oldest first inside a card.
+- **Quiet card** when the project has none: the existing quiet body ("circle-check"),
+  with wording "Nothing to clarify".
+- **Status pill per card:** amber "Check" if it has clarify tasks, green "OK" if not.
+  No red on home: red meant stopped/blocked, which are out of scope here.
+  The count is the number of clarify tasks.
+- **Headline** on top (kept from v1): "N tasks need clarification" with
+  "in X of Y projects", or the quiet line "No task needs clarification." when all are quiet.
+- **Order of cards:** projects with clarify tasks first (most first), then the quiet
+  ones alphabetically, as the old page sorted.
+- **Row cap per card:** show up to `INDEX_ROWS` (the old constant), then
+  "N more on the board" linking to the project board, as before.
+- **Config errors:** a project whose `project.toml` cannot be read still gets its card,
+  with the old config-error note, instead of being skipped (v1 skipped it silently).
+- **Still removed from home:** mode guard card, outside cards (mail desk, unrouted
+  mails, antson-helper, learnings), the status strip, wiki/desk items inside project
+  cards, and every non-clarify reason (blocked, stopped, lease, inbox, review). These
+  stay commented out under `BACKLOG(home)` for the backlog feature (COORD-5).
+- **Open question, my call:** wiki "Decision needed" or "Sources disagree" items of a
+  project (KMU) are *not* shown, because they are not coordinator tasks in the clarify state.
+  They go to the backlog feature.
 
 ## Intent
 
@@ -85,8 +123,20 @@ loses the masonry of cards. Refresh keeps working (`/?fresh=1`).
 - Tests that cover the removed index content are skipped with the same marker
   (`@unittest.skip("BACKLOG(home): ...")`), not deleted.
 
+**Revision 1 build notes.** `api_index` returns, per registered project: key, name,
+config error (if any), chat count, and its clarify items (use `_need`, filter
+`state_role == "clarify"`, as v1 does). Projects come from `core.list_projects`, never
+filtered by "has clarify tasks". `page_index` builds one card per project
+with `_project_card` (restore it from the BACKLOG(home) block, drop its wiki and
+other-reasons parts) and puts them in `<div class="masonry">$cards</div>` in `index.html`.
+Logos come from the existing `LOGOS` map and `_logo`; a project without a logo gets the monogram.
+
 ## Tests
 
+- Revision 1 tests: a project with no clarify task still has a card with the quiet body;
+  every registered project has exactly one card; card order; count and pill per card;
+  a broken `project.toml` still gives a card with the config error; the row cap and the
+  "more" link; logo vs monogram.
 - New tests: index lists only clarify tasks; oldest first; a blocked-only, review-only
   or inbox-only task does not appear; empty state shows the quiet line; row links to `/t/<id>`
   and the project key links to `/p/<key>`; `api_index` does not call the outside readers.
