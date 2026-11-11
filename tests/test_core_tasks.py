@@ -97,16 +97,18 @@ class CoreTasksTest(unittest.TestCase):
         self.assertEqual(t["open_points"], [])
         self.assertEqual(t["project"], "KMU")
 
-    def test_chat_task_lands_in_inbox_person_task_not(self):
+    def test_chat_and_person_tasks_start_open_not_in_inbox(self):
         self.project()
         c = core.create_task(self.conn, "KMU", "a", chat())
         p = core.create_task(self.conn, "KMU", "b", PERSON)
-        self.assertIs(c["inbox"], True)
+        self.assertIs(c["inbox"], False)
         self.assertIs(p["inbox"], False)
-        self.assertEqual([t["id"] for t in core.list_tasks(self.conn, inbox=True)],
-                         [c["id"]])
-        forced = core.create_task(self.conn, "KMU", "c", PERSON, inbox=True)
+        self.assertEqual(c["state"], "open")
+        self.assertEqual(core.list_tasks(self.conn, inbox=True), [])
+        forced = core.create_task(self.conn, "KMU", "c", chat(), inbox=True)
         self.assertIs(forced["inbox"], True)
+        self.assertEqual([t["id"] for t in core.list_tasks(self.conn, inbox=True)],
+                         [forced["id"]])
 
     def test_chat_cannot_create_more_than_three_per_session(self):
         self.project()

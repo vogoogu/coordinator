@@ -147,7 +147,7 @@ def create_task(conn, project_key: str, title: str, actor: Actor, goal="",
         raise messages.project_config_bad(proj["root"], "no waiting state defined",
                                           "The task was not created.")
     if inbox is None:
-        inbox = actor.type == "chat"
+        inbox = False  # chat tasks go straight to the first waiting state (Daria, 2026-11-11)
     if not str(title or "").strip():
         raise messages.empty_value("the title")
     with _write(conn):

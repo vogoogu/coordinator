@@ -63,7 +63,7 @@ class CoreClaimsTest(unittest.TestCase):
     # ------------------------------------------------------------ claim
 
     def test_claim_moves_to_active_and_records_transcript(self):
-        t = self.task(chat("s0"))  # inbox = 1
+        t = self.task(chat("s0"), inbox=True)
         self.assertTrue(t["inbox"])
         r = core.claim(self.conn, t["id"], "s1", "C:\\t\\s1.jsonl", "C:\\work", now=T0)
         self.assertEqual(r["state"], "building")
