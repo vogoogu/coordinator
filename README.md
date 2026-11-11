@@ -83,11 +83,11 @@ yourself (merge the JSON into `%USERPROFILE%\.claude\settings.json`, run the
 `--env` takes several values, so `--scope user` comes after it and before the
 server name `coordinator`; the `PYTHONPATH` value is quoted.
 
-The PostToolUse hook keeps a chat's lease alive. Its matcher lists only Claude
-Code's built-in tools, because each run costs about 0.6 s and MCP tools (browser
-steps above all) are called most often. A chat that uses only MCP tools for more
-than 4 hours can therefore lose its lease. If you installed the hooks before
-8 November 2026, add this `"matcher"` to your PostToolUse entry (run
+The PostToolUse hook keeps a chat's lease alive (30 minutes without activity ends
+the claim and moves the task to the clarify state). Its matcher must include the
+MCP tools (`mcp__.*`, browser steps above all), otherwise a chat that works only
+through them loses its lease while it is busy. If you installed the hooks before
+11 November 2026, replace the `"matcher"` of your PostToolUse entry (run
 `install-help` to see it).
 
 ## Warn or block
@@ -153,7 +153,8 @@ Settings in `%USERPROFILE%\.coordinator\notify.toml` (all optional):
     board_port = 8790
 
 Known limits: a chat window that crashes or is closed without its stop hook is
-noticed only after 4 hours, and only when the board is used or a chat starts.
+noticed only after 30 minutes without activity, and only when the board is used or a chat
+starts. Until then its card shows "quiet for N min" (from 10 minutes).
 With Windows "Do not disturb" on, the pop-up waits but the sound still plays.
 
 ## Modes (Antson projects)

@@ -20,7 +20,7 @@ from .pages import page_error, page_index, page_modes, page_needs, page_project,
 WEB_DIR = Path(__file__).parent / "web"
 STATIC_DIR = WEB_DIR / "static"
 KINDS = config.KINDS
-SOON = timedelta(minutes=30)
+SOON = timedelta(minutes=10)
 MAX_BODY = 1_000_000
 CONTENT_TYPES = {".css": "text/css; charset=utf-8", ".png": "image/png",
                  ".js": "text/javascript; charset=utf-8"}

@@ -433,7 +433,7 @@ def pin(conn, display_id, actor: Actor) -> dict:
 # ---------------------------------------------------------------- claims
 # Functions taking `now` accept a timezone-aware datetime (default: the current time).
 
-LEASE_HOURS = 4
+LEASE_HOURS = 0.5   # a claim with no activity this long is ended and the task goes to clarify (COORD-8)
 OUTCOMES = ("done", "clarify", "progress")
 _OUTCOME_COMMENT = {"done": "handoff", "clarify": "question", "progress": "progress"}
 COORDINATOR_TOOL_PREFIX = "mcp__coordinator__"

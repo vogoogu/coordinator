@@ -312,8 +312,8 @@ class CoreClaimsTest(unittest.TestCase):
         t = self.task()
         core.claim(self.conn, t["id"], "s1", now=T0)
         core.touch(self.conn, "s1", "Bash", "C:\\p", now=T0)
-        self.assertEqual(core.expire_leases(self.conn, now=T0 + timedelta(hours=4)), [])
-        ids = core.expire_leases(self.conn, now=T0 + timedelta(hours=4, seconds=1))
+        self.assertEqual(core.expire_leases(self.conn, now=T0 + timedelta(hours=core.LEASE_HOURS)), [])
+        ids = core.expire_leases(self.conn, now=T0 + timedelta(hours=core.LEASE_HOURS, seconds=1))
         self.assertEqual(ids, [t["id"]])
         full = core.get_task(self.conn, t["id"])
         self.assertEqual(full["state"], "clarify")
@@ -338,9 +338,9 @@ class CoreClaimsTest(unittest.TestCase):
         t = self.task()
         core.claim(self.conn, t["id"], "s1", now=T0)
         core.touch(self.conn, "s1", "Edit", "x", now=T0 + timedelta(hours=3))
-        self.assertEqual(core.expire_leases(self.conn, now=T0 + timedelta(hours=6)), [])
+        self.assertEqual(core.expire_leases(self.conn, now=T0 + timedelta(hours=3.4)), [])
         self.assertEqual(
-            len(core.expire_leases(self.conn, now=T0 + timedelta(hours=7+1))), 1)
+            len(core.expire_leases(self.conn, now=T0 + timedelta(hours=3.6))), 1)
 
     # ---------------------------------------------------- force release
 
