@@ -28,7 +28,7 @@ ids = re.findall(r"(\\d+)\\s*=", re.search(r"^\\s*-\\s*Antson forms:\\s*(.+)$", 
 print("seeded: " + ", ".join(ids))
 '''
 
-KMU = "# KMU\\n- Antson forms: 596=KMU Beratungsstrecke, 615=Vollmacht, 624=Beratungsprotokoll\\n"
+DEMO = "# DEMO\\n- Antson forms: 596=DEMO Beratungsstrecke, 615=Vollmacht, 624=Beratungsprotokoll\\n"
 
 
 class SeedTest(unittest.TestCase):
@@ -71,28 +71,28 @@ class SeedTest(unittest.TestCase):
             (folder / "CLAUDE.md").write_text(claude_md.replace("\\n", "\n"), encoding="utf-8")
         return folder
 
-    def init(self, folder, key="KMU"):
-        return self.run_cli("init-project", str(folder), "--key", key, "--name", "KMU")
+    def init(self, folder, key="DEMO"):
+        return self.run_cli("init-project", str(folder), "--key", key, "--name", "DEMO")
 
     def test_init_project_seeds_forms(self):
-        folder = self.project(KMU)
+        folder = self.project(DEMO)
         code, out, err = self.init(folder)
         self.assertEqual(code, 0, err)
         self.assertIn("seeded: 596, 615, 624", out)
-        self.assertEqual(self.calls(), [["seed", os.path.normcase(os.path.realpath(folder)), "KMU"]])
+        self.assertEqual(self.calls(), [["seed", os.path.normcase(os.path.realpath(folder)), "DEMO"]])
 
     def test_add_project_seeds_forms(self):
         first = self.project(None, name="first")           # no forms line: no call
         self.assertEqual(self.init(first, key="AA")[0], 0)
-        other = self.project(KMU, name="kmu2")
+        other = self.project(DEMO, name="kmu2")
         (other / ".coordinator").mkdir()
         toml = (first / ".coordinator" / "project.toml").read_text(encoding="utf-8")
         (other / ".coordinator" / "project.toml").write_text(
-            toml.replace('key = "AA"', 'key = "KMU"'), encoding="utf-8")
+            toml.replace('key = "AA"', 'key = "DEMO"'), encoding="utf-8")
         code, out, err = self.run_cli("add-project", str(other))
         self.assertEqual(code, 0, err)
         self.assertIn("seeded: 596, 615, 624", out)
-        self.assertEqual(self.calls(), [["seed", os.path.normcase(os.path.realpath(other)), "KMU"]])
+        self.assertEqual(self.calls(), [["seed", os.path.normcase(os.path.realpath(other)), "DEMO"]])
 
     def test_no_forms_line_means_no_call(self):
         for claude_md in (None, "# Plain project\\n"):
@@ -102,7 +102,7 @@ class SeedTest(unittest.TestCase):
 
     def test_failing_guard_never_blocks_connect(self):
         (self.guard / "crash").write_text("1")
-        folder = self.project(KMU)
+        folder = self.project(DEMO)
         code, out, err = self.init(folder)
         self.assertEqual(code, 0, err)
         self.assertIn("registered at", out)
@@ -111,7 +111,7 @@ class SeedTest(unittest.TestCase):
 
     def test_missing_guard_never_blocks_connect(self):
         os.environ["COORDINATOR_GUARD_MODE_PY"] = str(Path(self.tmp, "nowhere", "mode.py"))
-        code, out, err = self.init(self.project(KMU))
+        code, out, err = self.init(self.project(DEMO))
         self.assertEqual(code, 0, err)
         self.assertIn("mode.py was not found", out)
 
@@ -120,7 +120,7 @@ class SeedTest(unittest.TestCase):
         old = antson.SEED_TIMEOUT
         antson.SEED_TIMEOUT = 1
         self.addCleanup(setattr, antson, "SEED_TIMEOUT", old)
-        code, out, err = self.init(self.project(KMU))
+        code, out, err = self.init(self.project(DEMO))
         self.assertEqual(code, 0, err)
         self.assertIn("did not answer in time", out)
 
