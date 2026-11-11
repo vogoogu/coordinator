@@ -744,8 +744,11 @@ def helpers_running(claim, now: datetime) -> bool:
 def helper_event(conn, session_id, started: bool, now: datetime | None = None) -> bool:
     """A background helper of this chat started or stopped (SubagentStart/Stop hooks).
     Counts them and counts the event as activity, so the lease does not run out while
-    helpers work. Writes nothing for a session without a live claim; returns whether it did."""
-    if not _live_claim_rows(conn, session_id=session_id):
+    helpers work. Writes nothing for a session that never held a claim; returns whether it
+    did. The count is kept even while the claim is gone (a helper's stop often arrives just
+    after the chat lost the claim), otherwise the count drifts and stays at 1."""
+    if not conn.execute("SELECT 1 FROM claim WHERE session_id = ? LIMIT 1",
+                        (session_id,)).fetchone():
         return False
     stamp = _stamp(now)
     with transaction(conn):

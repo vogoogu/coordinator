@@ -10,7 +10,7 @@ import sys
 import tempfile
 import traceback
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 if not __package__:  # started as a script: make `coordinator` importable
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -235,6 +235,9 @@ def _stop(conn, payload, env) -> HookResult:
     sid = payload.get("session_id") or ""
     if not sid or not core.needs_report(conn, sid):
         return HookResult()
+    held = core.claim_for_session(conn, sid)
+    if held and core.helpers_running(held, datetime.now(timezone.utc)):
+        return HookResult()  # the chat waits for its background helpers: not a stop (task chain)
     if payload.get("stop_hook_active"):
         m = notify.mark(conn)
         stopped = core.stop_without_report(conn, sid, STOP_NOTE)

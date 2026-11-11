@@ -248,6 +248,50 @@ class HelperLeaseTest(ChainBase):
             self.conn.execute("SELECT COUNT(*) FROM session_stat").fetchone()[0], before)
 
 
+class StopWhileHelperTest(ChainBase):
+    """The spec chat ends its turn to wait for a background helper: that is not a stop."""
+    def setUp(self):
+        super().setUp()
+        self.tid = self.task()
+        core.claim(self.conn, self.tid, "sess-1")
+        self.conn.execute("UPDATE session_stat SET last_task_update = '2020-01-01T00:00:00+00:00'"
+                          " WHERE session_id = 'sess-1'")
+        core.touch(self.conn, "sess-1", "Bash")          # worked since its last task update
+        self.assertTrue(core.needs_report(self.conn, "sess-1"))
+
+    def stop(self, active):
+        return hooks.handle("stop", {"session_id": "sess-1", "cwd": self.root,
+                                     "stop_hook_active": active}, {})
+
+    def test_no_reminder_and_no_release_while_a_helper_runs(self):
+        hooks.handle("subagent-start", {"session_id": "sess-1"}, {})
+        for active in (False, True):
+            r = self.stop(active)
+            self.assertEqual((r.exit_code, r.stderr), (0, ""))
+        self.assertEqual(core.get_task(self.conn, self.tid)["state"], "building")
+        self.assertIsNotNone(core.claim_for_session(self.conn, "sess-1"))
+
+    def test_without_a_helper_the_stop_hook_works_as_before(self):
+        self.assertEqual(self.stop(False).exit_code, 2)
+        self.stop(True)
+        self.assertEqual(core.get_task(self.conn, self.tid)["state"], "clarify")
+
+    def test_after_the_helper_stopped_the_stop_hook_works_again(self):
+        hooks.handle("subagent-start", {"session_id": "sess-1"}, {})
+        hooks.handle("subagent-stop", {"session_id": "sess-1"}, {})
+        core.touch(self.conn, "sess-1", "Bash")
+        self.assertEqual(self.stop(False).exit_code, 2)
+
+    def test_helper_events_count_even_when_the_claim_is_gone(self):
+        core.release(self.conn, self.tid, "sess-1", "clarify", "q")
+        hooks.handle("subagent-start", {"session_id": "sess-1"}, {})
+        hooks.handle("subagent-stop", {"session_id": "sess-1"}, {})
+        stat = core.get_session_stat(self.conn, "sess-1")
+        self.assertEqual(stat["helpers"], 0)
+        hooks.handle("subagent-start", {"session_id": "never-claimed"}, {})
+        self.assertIsNone(core.get_session_stat(self.conn, "never-claimed"))
+
+
 class OverlapTest(ChainBase):
     def test_lists_other_open_tasks_with_shared_forms_first(self):
         a, b, c, d = (self.task(x) for x in "ABCD")
