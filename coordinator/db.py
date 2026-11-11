@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import paths
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS project (
@@ -93,6 +93,13 @@ CREATE TABLE IF NOT EXISTS hook_warning (
     shown TEXT
 );
 CREATE INDEX IF NOT EXISTS hook_warning_session ON hook_warning(session_id);
+CREATE TABLE IF NOT EXISTS start_note (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL REFERENCES task(id),
+    root TEXT NOT NULL,
+    created TEXT NOT NULL,
+    taken TEXT
+);
 """
 
 # Columns added after a table was first created: CREATE TABLE IF NOT EXISTS does
@@ -101,6 +108,12 @@ ADDED_COLUMNS = (
     ("session_stat", "last_tool", "TEXT"),   # version 2
     ("session_stat", "last_path", "TEXT"),   # version 2
     ("claim", "launch", "TEXT"),             # version 3: launch token (R32)
+    ("task", "word", "TEXT NOT NULL DEFAULT ''"),     # version 4: chat-name word
+    ("task", "forms", "TEXT NOT NULL DEFAULT '[]'"),  # version 4: what the task touches
+    ("comment", "role", "TEXT NOT NULL DEFAULT ''"),  # version 4: helper role of a report
+    ("claim", "waiting_click", "TEXT"),               # version 4: waits for a permission click
+    ("session_stat", "helpers", "INTEGER NOT NULL DEFAULT 0"),  # version 4: running helpers
+    ("session_stat", "helpers_at", "TEXT"),           # version 4: when a helper last started
 )
 
 

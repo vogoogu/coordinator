@@ -218,7 +218,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 0, err)
         with open(sink, encoding="utf-8") as f:
             [rec] = [json.loads(line) for line in f]
-        self.assertEqual(rec["heading"], "PX-1 needs you")
+        self.assertRegex(rec["heading"], r"^PX-1 spec · \w+ needs you$")
 
     def test_backup_keeps_14(self):
         dest = Path(self.tmp, "bk")
@@ -264,7 +264,9 @@ class CliTest(unittest.TestCase):
         data = json.loads(out[out.index("{"):out.rindex("}") + 1])
         hooks = data["hooks"]
         self.assertEqual(set(hooks), {"SessionStart", "PreToolUse", "PostToolUse", "Stop",
-                                      "UserPromptSubmit"})
+                                      "UserPromptSubmit", "Notification", "SubagentStart",
+                                      "SubagentStop"})
+        self.assertEqual(hooks["Notification"][0]["matcher"], "permission_prompt")
         self.assertEqual(hooks["PreToolUse"][0]["matcher"],
                          "Write|Edit|MultiEdit|NotebookEdit")
         post = hooks["PostToolUse"][0]["matcher"].split("|")

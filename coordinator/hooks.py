@@ -1,7 +1,8 @@
 """Claude Code hooks: a thin front over core. Fails open: never crashes a session.
 
 Run as `python -m coordinator.hooks <event>` or `python <path>\\hooks.py <event>`
-with event in session-start, pre-tool, post-tool, stop, prompt. The hook payload is JSON
+with event in session-start, pre-tool, post-tool, stop, prompt, notification,
+subagent-start, subagent-stop. The hook payload is JSON
 on stdin."""
 import json
 import os
@@ -83,6 +84,7 @@ def _packet(conn, task: dict, session_id: str) -> str:
     notes = [c for c in full["comments"] if c["kind"] in ("handoff", "progress")]
     lines = [
         f"You hold task {task['id']}: {task['title']}",
+        f"Your chat name: {core.task_name(full)}",
         f"Mode: {task['mode']} | State: {task['state']}",
         f"Goal: {task['goal'] or '-'}",
         f"Done when: {task['done_when'] or '-'}",
@@ -154,6 +156,14 @@ def _session_start(conn, payload, env) -> HookResult:
                               waiting_only=True)
         except core.CoordinatorError as e:
             return HookResult(stdout=f"{e}\n{_howto(conn, sid, cwd)}\n")
+        if task:
+            return HookResult(stdout=_packet(conn, task, sid) + "\n")
+    if not wanted and source == "startup":
+        # Start on the board opened the folder and left a note: the first new chat takes it
+        try:
+            task = core.take_start_note(conn, sid, cwd, transcript)
+        except core.CoordinatorError:
+            task = None
         if task:
             return HookResult(stdout=_packet(conn, task, sid) + "\n")
     held = core.claim_for_session(conn, sid)
@@ -261,8 +271,34 @@ def _prompt(conn, payload, env) -> HookResult:
         f"message is not about {task['id']}, call task_release with outcome progress.\n"))
 
 
+def _notification(conn, payload, env) -> HookResult:
+    """Claude Code waits for the person's click on a permission question (task chain)."""
+    sid = payload.get("session_id") or ""
+    kind = str(payload.get("notification_type") or "")
+    message = str(payload.get("message") or "")
+    if not sid or (kind and kind != "permission_prompt") \
+            or (not kind and "permission" not in message.lower()):
+        return HookResult()
+    m = notify.mark(conn)
+    task = core.mark_waiting_click(conn, sid, message)
+    if task:
+        notify.fire(conn, m, [task["id"]])
+    return HookResult()
+
+
+def _subagent(started: bool):
+    def run(conn, payload, env) -> HookResult:
+        sid = payload.get("session_id") or ""
+        if sid:
+            core.helper_event(conn, sid, started)
+        return HookResult()
+    return run
+
+
 EVENTS = {"session-start": _session_start, "pre-tool": _pre_tool,
-          "post-tool": _post_tool, "stop": _stop, "prompt": _prompt}
+          "post-tool": _post_tool, "stop": _stop, "prompt": _prompt,
+          "notification": _notification, "subagent-start": _subagent(True),
+          "subagent-stop": _subagent(False)}
 
 
 def handle(event: str, payload: dict, env: dict) -> HookResult:

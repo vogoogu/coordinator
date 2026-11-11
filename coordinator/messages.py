@@ -263,3 +263,17 @@ def make_task_exists(name, display_id):
 
 def source_unreadable(source, reason):
     return f"source {source} could not be read: {reason}"
+
+
+def bad_role(role):
+    return CoordinatorError(
+        f"The comment was not added: unknown role {role!r}.",
+        "A helper role is spec, or build / test with the round number.",
+        "Pass role as spec, build 1, test 1, build 2 and so on, or leave it out.")
+
+
+def bad_forms(detail):
+    return CoordinatorError(
+        "The forms were not changed.",
+        f"Forms must be a list of text entries, got {detail}.",
+        "Pass forms as a list of strings, for example [\"497\", \"458\"].")

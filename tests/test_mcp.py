@@ -113,7 +113,8 @@ class McpTest(unittest.TestCase):
         tools = self.rpc("tools/list")["result"]["tools"]
         self.assertEqual(sorted(t["name"] for t in tools), sorted([
             "task_list", "task_show", "task_create", "task_claim", "task_release",
-            "task_set_state", "task_comment", "task_update", "task_lower_mode"]))
+            "task_set_state", "task_comment", "task_update", "task_lower_mode",
+            "task_overlaps"]))
         for t in tools:
             self.assertEqual(t["inputSchema"]["type"], "object")
             self.assertTrue(t["description"])
@@ -161,8 +162,8 @@ class McpTest(unittest.TestCase):
                            outcome="done", note="all good")
         self.assertFalse(err, t)
         [rec] = self.sunk()
-        self.assertEqual((rec["heading"], rec["line2"], rec["kind"]),
-                         (f"{tid} is ready to check", "all good", "finished"))
+        self.assertRegex(rec["heading"], rf"^{tid} spec . \w+ is ready to check$")
+        self.assertEqual((rec["line2"], rec["kind"]), ("all good", "finished"))
 
     def test_set_state_clarify_sends_toast(self):
         tid = self.claimed_task()
@@ -170,7 +171,8 @@ class McpTest(unittest.TestCase):
                            state="clarify", note="v3 or v4?")
         self.assertFalse(err, t)
         [rec] = self.sunk()
-        self.assertEqual((rec["heading"], rec["line2"]), (f"{tid} needs you", "v3 or v4?"))
+        self.assertRegex(rec["heading"], rf"^{tid} spec . \w+ needs you$")
+        self.assertEqual(rec["line2"], "v3 or v4?")
 
     def test_release_survives_toast_failure(self):
         tid = self.claimed_task()

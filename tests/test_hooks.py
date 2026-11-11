@@ -414,7 +414,7 @@ class HooksTest(unittest.TestCase):
         self.work()
         [rec] = self.sunk_during(lambda: self.stop(active=True))
         self.assertEqual((rec["heading"], rec["line2"]),
-                         (f"{tid} needs you", "Chat stopped without a report"))
+                         (f"{core.task_name(core.get_task(self.conn, tid))} needs you", "Chat stopped without a report"))
 
     def test_stop_does_not_repeat_other_chats_pop_ups(self):
         tid = self.claimed()
@@ -429,7 +429,7 @@ class HooksTest(unittest.TestCase):
 
         with mock.patch.object(hooks.core, "stop_without_report", with_other_chat_meanwhile):
             recs = self.sunk_during(lambda: self.stop(active=True))
-        self.assertEqual([r["heading"] for r in recs], [f"{tid} needs you"])
+        self.assertEqual([r["heading"] for r in recs], [f"{core.task_name(core.get_task(self.conn, tid))} needs you"])
 
     def test_stop_reminder_sends_nothing(self):
         self.claimed()

@@ -114,19 +114,20 @@ class NotifyTest(unittest.TestCase):
 
     # ------------------------------------------------------------ compose
     def alert(self, kind="finished", note="ok", stopped=False):
-        return notify.Alert(kind, "KMU-1", "KMU Beratung", "Build it", note, stopped)
+        return notify.Alert(kind, "KMU-1", "KMU Beratung", "Build it", note, stopped,
+                            "KMU-1 spec · otter")
 
     def test_compose_single_finished(self):
         t, = notify.compose([self.alert()], notify.Settings())
         self.assertEqual(
             (t.heading, t.line1, t.line2, t.url, t.button, t.attribution, t.kind),
-            ("KMU-1 is ready to check", "Build it", "ok", "http://127.0.0.1:8790/t/KMU-1",
+            ("KMU-1 spec · otter is ready to check", "Build it", "ok", "http://127.0.0.1:8790/t/KMU-1",
              "Open task", "KMU Beratung", "finished"))
         self.assertEqual(t.sound, r"C:\Windows\Media\Windows Notify System Generic.wav")
 
     def test_compose_needs_you(self):
         t, = notify.compose([self.alert("needs_you", "v3?")], notify.Settings())
-        self.assertEqual((t.heading, t.line2), ("KMU-1 needs you", "v3?"))
+        self.assertEqual((t.heading, t.line2), ("KMU-1 spec · otter needs you", "v3?"))
         self.assertEqual(t.sound, r"C:\Windows\Media\Windows Notify Messaging.wav")
 
     def test_compose_stopped_wording(self):
@@ -163,7 +164,7 @@ class NotifyTest(unittest.TestCase):
             core.release(self.conn, self.tid, "s1", "done", "ok")
             notify.fire(self.conn, m, [self.tid])
         start.assert_called_once_with(8790)
-        self.assertEqual(show.call_args.args[0].heading, f"{self.tid} is ready to check")
+        self.assertEqual(show.call_args.args[0].heading, f"{core.task_name(core.get_task(self.conn, self.tid))} is ready to check")
         self.assertEqual(show.call_args.args[1], "Coordinator.Board")
 
     def test_fire_board_already_up_is_not_started(self):

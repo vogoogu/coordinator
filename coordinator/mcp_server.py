@@ -78,16 +78,19 @@ TOOLS = [
     {"name": "task_comment",
      "description": ("Add a comment to a task (no claim needed). Kinds: comment, "
                      "question, answer. Handoff and progress notes are written by "
-                     "task_release. " + SID),
+                     "task_release. A builder or tester helper reports with its role, "
+                     "and the board shows the text word for word under the chat name. " + SID),
      "inputSchema": _schema({
          **_SESSION, **_ID,
          "kind": _s("Comment kind.", enum=["comment", "question", "answer"]),
-         "text": _s("The comment text.")},
+         "text": _s("The comment text."),
+         "role": _s("Who writes: spec, or build / test with the round, for example "
+                    "'build 1' or 'test 2'. Leave out for an ordinary comment.")},
          ["session_id", "id", "kind", "text"])},
     {"name": "task_update",
      "description": ("Edit task fields: goal, done_when, scope (text), open_points "
-                     "(list of text), blocked (text, or null to clear). Needs your "
-                     "own claim. " + SID),
+                     "and forms (lists of text), blocked (text, or null to clear). "
+                     "Needs your own claim. " + SID),
      "inputSchema": _schema({
          **_SESSION, **_ID,
          "fields": {
@@ -97,10 +100,24 @@ TOOLS = [
                  "scope": _s("New scope."),
                  "open_points": {"type": "array", "items": {"type": "string"},
                                  "description": "Replacement list of open points."},
+                 "forms": {"type": "array", "items": {"type": "string"},
+                           "description": "Replacement list of the forms or interfaces "
+                                          "this task touches (ids or names)."},
                  "blocked": {"type": ["string", "null"],
                              "description": "Blocking reason, or null to clear."}},
              "additionalProperties": False}},
          ["session_id", "id", "fields"])},
+    {"name": "task_overlaps",
+     "description": ("List the other open tasks of this task's project with the forms "
+                     "they touch, for the overlap check before a spec is approved. "
+                     "Tasks sharing a form come first and name it in shared_forms. "
+                     "Read only."),
+     "inputSchema": _schema({
+         **_ID,
+         "forms": {"type": "array", "items": {"type": "string"},
+                   "description": "Forms to compare against; default: the forms "
+                                  "recorded on the task."}},
+         ["id"])},
     {"name": "task_lower_mode",
      "description": ("Lower a task's mode to a more restrictive one. Chats cannot "
                      "raise a mode; ask the person. " + SID),
@@ -145,7 +162,7 @@ def _update(conn, args):
         raise _bad("The argument 'fields' is missing or empty.",
                    "It must be an object with the fields to change.",
                    "Pass fields such as {\"goal\": \"...\"}.")
-    allowed = ("goal", "done_when", "scope", "open_points", "blocked")
+    allowed = ("goal", "done_when", "scope", "open_points", "forms", "blocked")
     unknown = [k for k in fields if k not in allowed]
     if unknown:
         raise _bad(f"Unknown field(s): {', '.join(unknown)}.",
@@ -166,6 +183,12 @@ def _update(conn, args):
         raise _bad("The field 'open_points' has the wrong type.",
                    "It must be a list of text entries; nothing was changed.",
                    "Pass open_points as a list of strings, for example [\"a\", \"b\"].")
+    forms = fields.get("forms")
+    if "forms" in fields and (not isinstance(forms, list)
+                              or not all(isinstance(f, str) for f in forms)):
+        raise _bad("The field 'forms' has the wrong type.",
+                   "It must be a list of text entries; nothing was changed.",
+                   "Pass forms as a list of strings, for example [\"497\", \"458\"].")
     # all fields are checked above, so a type error never leaves a partial update
     text ={k: fields[k] for k in ("goal", "done_when", "scope") if k in fields}
     result = None
@@ -173,6 +196,8 @@ def _update(conn, args):
         result = core.set_fields(conn, tid, actor, **text)
     if "open_points" in fields:
         result = core.set_open_points(conn, tid, actor, fields["open_points"])
+    if "forms" in fields:
+        result = core.set_forms(conn, tid, actor, fields["forms"])
     if "blocked" in fields:
         result = core.set_blocked(conn, tid, actor, fields["blocked"])
     return result
@@ -210,7 +235,15 @@ def _dispatch(conn, name, a):
         return t
     if name == "task_comment":
         return core.comment(conn, _req(a, "id"), _actor(a), _req(a, "kind"),
-                            _req(a, "text"))
+                            _req(a, "text"), role=_opt(a, "role") or "")
+    if name == "task_overlaps":
+        forms = a.get("forms")
+        if forms is not None and (not isinstance(forms, list)
+                                  or not all(isinstance(f, str) for f in forms)):
+            raise _bad("The argument 'forms' has the wrong type.",
+                       "It must be a list of text entries.",
+                       "Pass forms as a list of strings, or leave it out.")
+        return core.overlaps(conn, _req(a, "id"), forms)
     if name == "task_update":
         return _update(conn, a)
     if name == "task_lower_mode":

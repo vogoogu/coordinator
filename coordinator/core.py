@@ -1,5 +1,7 @@
 """Task operations. Every write runs in one transaction with its event row."""
 import json
+import random
+import re
 import secrets
 import sqlite3
 from contextlib import contextmanager
@@ -82,6 +84,7 @@ def _task_dict(row) -> dict:
     d["project"] = d.pop("project_key")
     d["id"] = f"{d['project']}-{d['number']}"
     d["open_points"] = json.loads(d["open_points"] or "[]")
+    d["forms"] = json.loads(d.get("forms") or "[]")
     d["inbox"] = bool(d["inbox"])
     return d
 
@@ -165,11 +168,11 @@ def create_task(conn, project_key: str, title: str, actor: Actor, goal="",
         cur = conn.execute(
             "INSERT INTO task (project_id, number, title, goal, done_when, scope,"
             " mode, state, open_points, inbox, origin, created_by_type,"
-            " created_by_id, created, updated, version)"
-            " VALUES (?,?,?,?,?,?,?,?,'[]',?,?,?,?,?,?,1)",
+            " created_by_id, created, updated, version, word)"
+            " VALUES (?,?,?,?,?,?,?,?,'[]',?,?,?,?,?,?,1,?)",
             (proj["id"], number, title, goal, done_when, scope,
              cfg.default_mode, first.name, 1 if inbox else 0, origin,
-             actor.type, actor.id, now, now))
+             actor.type, actor.id, now, now, random.choice(NAME_WORDS)))
         task_id = cur.lastrowid
         _event(conn, task_id, actor, "created", None, first.name, title, at=now)
         if actor.type == "chat":
@@ -228,6 +231,9 @@ def list_tasks(conn, project_key: str | None = None, states: list[str] | None = 
 # ---------------------------------------------------------------- changes
 
 COMMENT_KINDS = ("comment", "question", "answer", "handoff", "progress")
+ROLE_RE = re.compile(r"spec|(build|test) [1-9][0-9]?")   # who wrote a report (task chain)
+NAME_WORDS = ("otter", "heron", "lynx", "badger", "falcon", "marten", "ibex", "wren",
+              "stoat", "raven", "fox", "crane", "newt", "hare", "finch", "vole")
 CHAT_COMMENT_KINDS = ("comment", "question", "answer")
 EDITABLE_FIELDS = ("title", "goal", "done_when", "scope", "origin")
 
@@ -359,8 +365,9 @@ def set_mode(conn, display_id, mode, actor: Actor) -> dict:
     return _task_by_pk(conn, pk)
 
 
-def comment(conn, display_id, actor: Actor, kind, text) -> dict:
-    """Add a comment (no claim needed). Returns the comment row."""
+def comment(conn, display_id, actor: Actor, kind, text, role: str = "") -> dict:
+    """Add a comment (no claim needed). Returns the comment row. `role` marks a
+    helper's report ("build 1", "test 2", "spec"); it is kept with the comment."""
     with _write(conn):
         task, _cfg = _load(conn, display_id)
         pk = task["pk"]
@@ -374,10 +381,13 @@ def comment(conn, display_id, actor: Actor, kind, text) -> dict:
         if not str(text or "").strip():
             _refuse(conn, pk, actor, messages.empty_value("the comment text"),
                     attempted)
+        role = (role or "").strip().lower()
+        if role and not ROLE_RE.fullmatch(role):
+            _refuse(conn, pk, actor, messages.bad_role(role), attempted)
         now = _now()
         cur = conn.execute(
-            "INSERT INTO comment (task_id, at, actor_type, actor_id, kind, text)"
-            " VALUES (?,?,?,?,?,?)", (pk, now, actor.type, actor.id, kind, text))
+            "INSERT INTO comment (task_id, at, actor_type, actor_id, kind, text, role)"
+            " VALUES (?,?,?,?,?,?,?)", (pk, now, actor.type, actor.id, kind, text, role))
         _bump(conn, pk, now)
         _event(conn, pk, actor, "comment", None, kind, text, at=now)
         row = conn.execute("SELECT * FROM comment WHERE id = ?",
@@ -434,6 +444,8 @@ def pin(conn, display_id, actor: Actor) -> dict:
 # Functions taking `now` accept a timezone-aware datetime (default: the current time).
 
 LEASE_HOURS = 0.5   # a claim with no activity this long is ended and the task goes to clarify (COORD-8)
+HELPER_MAX_HOURS = 2.0   # a helper counts as running at most this long after it started
+START_NOTE_MINUTES = 60  # a "waiting task" note is picked up by the first chat within this time
 OUTCOMES = ("done", "clarify", "progress")
 _OUTCOME_COMMENT = {"done": "handoff", "clarify": "question", "progress": "progress"}
 COORDINATOR_TOOL_PREFIX = "mcp__coordinator__"
@@ -459,8 +471,10 @@ def _set_session(conn, session_id, **cols):
 
 
 def _live_claim_rows(conn, task_pk=None, session_id=None) -> list:
-    sql = ("SELECT c.*, p.key || '-' || t.number AS display_id FROM claim c"
+    sql = ("SELECT c.*, p.key || '-' || t.number AS display_id,"
+           " COALESCE(s.helpers, 0) AS helpers, s.helpers_at AS helpers_at FROM claim c"
            " JOIN task t ON t.id = c.task_id JOIN project p ON p.id = t.project_id"
+           " LEFT JOIN session_stat s ON s.session_id = c.session_id"
            " WHERE c.ended IS NULL")
     args = []
     if task_pk is not None:
@@ -655,8 +669,8 @@ def touch(conn, session_id, tool="", path="", now: datetime | None = None) -> No
         return
     stamp = _stamp(now)
     with transaction(conn):
-        conn.execute("UPDATE claim SET last_seen = ? WHERE session_id = ?"
-                     " AND ended IS NULL", (stamp, session_id))
+        conn.execute("UPDATE claim SET last_seen = ?, waiting_click = NULL"
+                     " WHERE session_id = ? AND ended IS NULL", (stamp, session_id))
         _set_session(conn, session_id, last_activity=stamp, last_tool=tool,
                      last_path=path)
 
@@ -699,6 +713,8 @@ def expire_leases(conn, now: datetime | None = None, hours: float = LEASE_HOURS)
         for c in _live_claim_rows(conn):
             if datetime.fromisoformat(c["last_seen"]) >= cutoff:
                 continue
+            if helpers_running(c, datetime.fromisoformat(stamp)):
+                continue  # a background helper works for this chat (task chain)
             try:
                 task, cfg = _load(conn, c["display_id"])
             except CoordinatorError:
@@ -714,6 +730,50 @@ def expire_leases(conn, now: datetime | None = None, hours: float = LEASE_HOURS)
                 "chat stopped without hand-off; last activity: " + last, stamp)
             expired.append(task["id"])
     return expired
+
+
+def helpers_running(claim, now: datetime) -> bool:
+    """True while background helpers of the claim's chat run: started, not stopped, and
+    started less than HELPER_MAX_HOURS ago (a helper that never reported its end must not
+    keep a dead chat alive for ever)."""
+    if not claim["helpers"] or not claim["helpers_at"]:
+        return False
+    return now - datetime.fromisoformat(claim["helpers_at"]) < timedelta(hours=HELPER_MAX_HOURS)
+
+
+def helper_event(conn, session_id, started: bool, now: datetime | None = None) -> bool:
+    """A background helper of this chat started or stopped (SubagentStart/Stop hooks).
+    Counts them and counts the event as activity, so the lease does not run out while
+    helpers work. Writes nothing for a session without a live claim; returns whether it did."""
+    if not _live_claim_rows(conn, session_id=session_id):
+        return False
+    stamp = _stamp(now)
+    with transaction(conn):
+        row = conn.execute("SELECT helpers FROM session_stat WHERE session_id = ?",
+                           (session_id,)).fetchone()
+        n = max((row["helpers"] if row else 0) + (1 if started else -1), 0)
+        conn.execute("UPDATE claim SET last_seen = ? WHERE session_id = ? AND ended IS NULL",
+                     (stamp, session_id))
+        extra = {"helpers_at": stamp} if started else {}
+        _set_session(conn, session_id, helpers=n, last_activity=stamp, **extra)
+    return True
+
+
+def mark_waiting_click(conn, session_id, message: str = "") -> dict | None:
+    """The chat (or a helper of it) stopped on a permission question: mark the task.
+    None, and nothing written, if the session holds no claim or is already marked."""
+    rows = _live_claim_rows(conn, session_id=session_id)
+    if not rows or rows[0]["waiting_click"]:
+        return None
+    actor = Actor("chat", session_id)
+    with _write(conn):
+        task, _cfg = _load(conn, rows[0]["display_id"])
+        stamp = _now()
+        conn.execute("UPDATE claim SET waiting_click = ? WHERE id = ?",
+                     (stamp, rows[0]["id"]))
+        _event(conn, task["pk"], actor, "click_wait", None, session_id,
+               (message or "").strip()[:200] or None, at=stamp)
+    return _task_by_pk(conn, task["pk"])
 
 
 def stop_without_report(conn, session_id, note) -> dict | None:
@@ -837,3 +897,115 @@ def set_enforcement(conn, value: str, actor: Actor) -> str:
                      " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (value,))
         _event(conn, None, actor, "enforcement", old, value)
     return value
+
+
+# ---------------------------------------------------------------- task chain
+def task_name(task: dict, role: str = "spec") -> str:
+    """The chat name: "KMU-7 spec \u00b7 otter" (id, role, the task's word); without
+    a word yet just "KMU-7 spec"."""
+    word = task.get("word")
+    return f"{task['id']} {role} \u00b7 {word}" if word else f"{task['id']} {role}"
+
+
+def ensure_word(conn, display_id, actor: Actor) -> dict:
+    """Give a task that has no name word yet one (tasks made before the chain existed)."""
+    with _write(conn):
+        task, _cfg = _load(conn, display_id)
+        if not task["word"]:
+            now = _now()
+            word = random.choice(NAME_WORDS)
+            _bump(conn, task["pk"], now, word=word)
+            _event(conn, task["pk"], actor, "named", None, word, at=now)
+    return _task_by_pk(conn, task["pk"])
+
+
+def set_forms(conn, display_id, actor: Actor, forms: list) -> dict:
+    """The forms or interfaces the task touches (for the overlap check)."""
+    with _write(conn):
+        task, _cfg = _load(conn, display_id)
+        pk = task["pk"]
+        attempted = "set forms"
+        _require_edit_rights(conn, task, actor, attempted)
+        if (not isinstance(forms, (list, tuple))
+                or not all(isinstance(f, str) for f in forms)):
+            _refuse(conn, pk, actor, messages.bad_forms(repr(forms)), attempted)
+        clean = []
+        for f in forms:
+            f = f.strip()
+            if f and f not in clean:
+                clean.append(f)
+        new = json.dumps(clean, ensure_ascii=False)
+        old = json.dumps(task["forms"], ensure_ascii=False)
+        if new != old:
+            now = _now()
+            _bump(conn, pk, now, forms=new)
+            _event(conn, pk, actor, "forms", old, new, at=now)
+    return _task_by_pk(conn, pk)
+
+
+def overlaps(conn, display_id: str, forms: list | None = None) -> list:
+    """The other open tasks of this task's project, with the forms they touch.
+    Each entry says which forms it shares with `forms` (default: the task's own).
+    Open means not in a finished or closed state. Read only."""
+    task, cfg = _load(conn, display_id)
+    mine = set(task["forms"] if forms is None else forms)
+    final = {s.name for s in cfg.states if s.kind in ("finished", "closed")}
+    live = live_claims(conn)
+    out = []
+    for t in list_tasks(conn, task["project"]):
+        if t["id"] == task["id"] or t["state"] in final:
+            continue
+        out.append({"id": t["id"], "title": t["title"], "state": t["state"],
+                    "name": task_name(t), "forms": t["forms"],
+                    "shared_forms": [f for f in t["forms"] if f in mine],
+                    "claimed": t["id"] in live})
+    out.sort(key=lambda o: (not o["shared_forms"], o["id"]))
+    return out
+
+
+def leave_start_note(conn, display_id, actor: Actor) -> dict:
+    """The person pressed Start: the first new chat in the project folder picks the task
+    up. An older untaken note for the same task is replaced."""
+    with _write(conn):
+        task, _cfg = _load(conn, display_id)
+        pk = task["pk"]
+        now = _now()
+        conn.execute("UPDATE start_note SET taken = 'replaced' WHERE task_id = ?"
+                     " AND taken IS NULL", (pk,))
+        if not task["word"]:
+            _bump(conn, pk, now, word=random.choice(NAME_WORDS))
+        root = conn.execute("SELECT root FROM project WHERE id = ?",
+                            (task["project_id"],)).fetchone()["root"]
+        conn.execute("INSERT INTO start_note (task_id, root, created) VALUES (?,?,?)",
+                     (pk, root, now))
+        _event(conn, pk, actor, "start", None, None, "waiting for a chat in the folder",
+               at=now)
+    return _task_by_pk(conn, pk)
+
+
+def take_start_note(conn, session_id, cwd, transcript_path="",
+                    now: datetime | None = None) -> dict | None:
+    """A new chat started in `cwd`: if a Start note waits for that project, claim its
+    task (only if it is still waiting) and mark the note taken. Oldest note first.
+    Returns the claimed task, or None."""
+    proj = project_for_path(conn, cwd) if cwd else None
+    if not proj:
+        return None
+    cutoff = (datetime.fromisoformat(_stamp(now))
+              - timedelta(minutes=START_NOTE_MINUTES)).isoformat(timespec="seconds")
+    for n in conn.execute(
+            "SELECT n.id, p.key || '-' || t.number AS display_id FROM start_note n"
+            " JOIN task t ON t.id = n.task_id JOIN project p ON p.id = t.project_id"
+            " WHERE p.id = ? AND n.taken IS NULL AND n.created >= ? ORDER BY n.id",
+            (proj["id"], cutoff)).fetchall():
+        try:
+            task = claim(conn, n["display_id"], session_id, transcript_path, cwd,
+                         now=now, waiting_only=True)
+        except CoordinatorError:
+            task = None
+        with transaction(conn):
+            conn.execute("UPDATE start_note SET taken = ? WHERE id = ?",
+                         (session_id if task else "skipped", n["id"]))
+        if task:
+            return task
+    return None

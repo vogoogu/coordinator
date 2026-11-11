@@ -21,6 +21,9 @@ HOOK_EVENTS = (
     ("PostToolUse", POST_TOOL_MATCHER, "post-tool"),
     ("Stop", None, "stop"),
     ("UserPromptSubmit", None, "prompt"),
+    ("Notification", "permission_prompt", "notification"),
+    ("SubagentStart", None, "subagent-start"),
+    ("SubagentStop", None, "subagent-stop"),
 )
 
 

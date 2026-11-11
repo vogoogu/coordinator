@@ -7,7 +7,7 @@ from dataclasses import dataclass, fields
 from datetime import datetime
 from typing import Iterable
 
-from . import config, paths, toast
+from . import config, core, paths, toast
 
 SETTINGS_FILE = "notify.toml"
 LOG_FILE = "notify-errors.log"
@@ -30,12 +30,13 @@ class Settings:
 
 @dataclass
 class Alert:
-    kind: str           # "finished" | "needs_you"
+    kind: str           # "finished" | "needs_you" | "click" (waits for a permission click)
     task_id: str
     project: str
     title: str
     note: str
     stopped: bool
+    name: str = ""      # the chat name, "KMU-7 spec · otter"
 
 
 def log_error(where: str) -> None:
@@ -80,11 +81,11 @@ def collect(conn, since: int, task_ids: Iterable[str] | None = None) -> list[Ale
     """One Alert per task moved by a chat or the system since event `since`."""
     wanted = None if task_ids is None else {str(t).upper() for t in task_ids}
     rows = conn.execute(
-        "SELECT e.id, e.action, e.to_value, e.note, t.id AS pk, t.number, t.title,"
+        "SELECT e.id, e.action, e.to_value, e.note, t.id AS pk, t.number, t.title, t.word,"
         " p.key, p.name, p.root FROM event e JOIN task t ON t.id = e.task_id"
         " JOIN project p ON p.id = t.project_id"
         " WHERE e.id > ? AND e.actor_type IN ('chat', 'system')"
-        " AND e.action IN ('state', 'release') ORDER BY e.id", (since,)).fetchall()
+        " AND e.action IN ('state', 'release', 'click_wait') ORDER BY e.id", (since,)).fetchall()
     alerts: dict[int, Alert] = {}
     cfgs = {}
     for r in rows:
@@ -106,14 +107,17 @@ def collect(conn, since: int, task_ids: Iterable[str] | None = None) -> list[Ale
             kind, note = "needs_you", r["note"]
         elif r["action"] == "release" and r["to_value"] in STOPPED:
             kind, stopped = "needs_you", True
+        elif r["action"] == "click_wait":
+            kind, note = "click", r["note"]
         if kind is None:
             continue
         a = alerts.get(r["pk"])
         if a is None:
             a = alerts[r["pk"]] = Alert(kind, tid, r["name"] or r["key"], r["title"],
-                                        "", stopped)
-        elif kind == "needs_you":
-            a.kind = "needs_you"
+                                        "", stopped,
+                                        core.task_name({"id": tid, "word": r["word"]}))
+        elif kind == "needs_you" or (kind == "finished" and a.kind == "click"):
+            a.kind = kind  # a hand-over move wins over a click wait; needs-you wins over all
         a.stopped = a.stopped or stopped
         if note:
             a.note = _short(note)
@@ -146,7 +150,7 @@ def _sound(kind: str, s: Settings) -> str:
     if not s.sound:
         return ""
     own = s.sound_finished if kind == "finished" else s.sound_needs_you
-    return own or DEFAULT_SOUND[kind]
+    return own or DEFAULT_SOUND.get(kind) or DEFAULT_SOUND["needs_you"]  # a click wait sounds like needs-you
 
 
 def compose(alerts: list[Alert], settings: Settings) -> list[toast.Toast]:
@@ -160,9 +164,11 @@ def compose(alerts: list[Alert], settings: Settings) -> list[toast.Toast]:
         if a.kind == "needs_you" and len(needs) > 1:
             continue
         if a.kind == "finished":
-            heading, line2 = f"{a.task_id} is ready to check", a.note
+            heading, line2 = f"{a.name or a.task_id} is ready to check", a.note
+        elif a.kind == "click":
+            heading, line2 = f"{a.name or a.task_id} waits for your click", a.note
         else:
-            heading = f"{a.task_id} needs you"
+            heading = f"{a.name or a.task_id} needs you"
             line2 = "Chat stopped without a report" if a.stopped else a.note
         out.append(toast.Toast(a.kind, heading, a.title, line2, a.project,
                                f"{base}/t/{a.task_id}", "Open task",
