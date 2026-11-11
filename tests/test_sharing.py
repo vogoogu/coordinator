@@ -10,7 +10,7 @@ from pathlib import Path
 from coordinator import antson, version
 from tests import test_antson, test_board_needs
 
-USERPATH = "C:" + "\Users\someone\x"   # in pieces: the ship check scans this file too
+USERPATH = "C:" + "\\Users\\someone\\x"   # in pieces: the ship check scans this file too
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -86,16 +86,16 @@ class ShipCheckTest(unittest.TestCase):
         return r.returncode, r.stdout
 
     def test_clean_repo_passes(self):
-        code, out = self.run_check({"a.md": "hello\n", "tests/fixtures/x.json": r"C:\Users\someone\x AcmeCorp"})
+        code, out = self.run_check({"a.md": "hello\n", "tests/fixtures/x.json": USERPATH + " AcmeCorp"})
         self.assertEqual(code, 0, out)
 
     def test_personal_path_fails(self):
-        code, out = self.run_check({"a.md": r"see C:\Users\someone\Documents" + "\n"})
+        code, out = self.run_check({"a.md": "see " + USERPATH + "\n"})
         self.assertEqual(code, 1)
         self.assertIn("personal path", out)
 
     def test_onedrive_path_fails(self):
-        code, out = self.run_check({"a.md": "in OneDrive - Specific-Group Holding\n"})
+        code, out = self.run_check({"a.md": "in OneDrive - " + "Specific-Group Holding\n"})
         self.assertEqual(code, 1, out)
 
     def test_client_term_fails(self):
@@ -111,7 +111,7 @@ class ShipCheckTest(unittest.TestCase):
 
     def test_real_address_fails_dummy_passes(self):
         self.assertEqual(self.run_check({"a.md": "t@example.com\n"})[0], 0)
-        self.assertEqual(self.run_check({"a.md": "jane@firma.at\n"})[0], 1)
+        self.assertEqual(self.run_check({"a.md": "jane@" + "firma.at\n"})[0], 1)
 
     def test_missing_terms_file_is_not_ok(self):
         tmp = tempfile.mkdtemp(prefix="coord_ship_")
