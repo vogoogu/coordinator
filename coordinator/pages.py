@@ -566,7 +566,8 @@ URGENT_LOOK = {"stopped": ("stopped", "Chat stopped"), "lease": ("lease", "Lease
 STALE_DAYS = 1   # a handover card waiting this many days shows its age in amber
 
 
-def _task_card(c: dict, modes: list, token: str, here: str, now: datetime) -> Raw:
+def _task_card(c: dict, modes: list, token: str, here: str, now: datetime,
+               check_state: str = "") -> Raw:
     """One card. Each fact appears once; the column already names the state."""
     final = c["kind"] in FINAL
     metas = []
@@ -608,6 +609,9 @@ def _task_card(c: dict, modes: list, token: str, here: str, now: datetime) -> Ra
         start = (render("_card_start.html", token_field=_token_field(token), id=c["id"],
                         next=here, icon_play=icon("play"))
                  if c["kind"] == "waiting" and not c["holder"] else "")
+        if check_state and c["state"] == check_state:
+            start = render("_card_done.html", token_field=_token_field(token), id=c["id"],
+                           next=here, icon_ok=icon("circle-check"))
         foot = render("_card_foot.html", age=age, start=start)
     extra = (" quiet" if final else "") + (" urgent" if urgent else "")
     return render("_task_card.html", extra=extra, id=c["id"], top=top, title=c["title"],
@@ -616,7 +620,10 @@ def _task_card(c: dict, modes: list, token: str, here: str, now: datetime) -> Ra
 
 def _column(col: dict, d: dict, here: str, older: bool, now: datetime) -> Raw:
     key = d["project"]["key"]
-    cls, icon_name, word = _kind(col["kind"])
+    to_check = bool(d.get("check_state")) and col["name"] == d["check_state"]
+    cls, icon_name, word = _kind("finished" if to_check else col["kind"])   # To check is green
+    if to_check:
+        word = KIND_LOOK["handover"][2]
     cards = [{**c, "state_label": col["label"]} for c in col["cards"]]
     more = ""
     if col["kind"] in FINAL:
@@ -629,7 +636,8 @@ def _column(col: dict, d: dict, here: str, older: bool, now: datetime) -> Raw:
                 more = render("_more_link.html", href=f"/p/{key}/all",
                               text=f"Show {len(cards) - len(recent)} older")
             cards = recent
-    body = Raw("".join(_task_card(c, d["modes"], d["token"], here, now) for c in cards))
+    body = Raw("".join(_task_card(c, d["modes"], d["token"], here, now, d.get("check_state", ""))
+                       for c in cards))
     return render("_column.html", label=col["label"], kind_class=cls,
                   kind_icon=icon(icon_name), kind_text=word, count=len(cards),
                   cards=body, more=more, icon_chevron=icon("chevron-down"),

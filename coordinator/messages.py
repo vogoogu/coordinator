@@ -88,6 +88,13 @@ def chat_final_state(name, kind):
         "Hand the task over for review instead and let the person decide.")
 
 
+def cannot_close(display_id, why):
+    return CoordinatorError(
+        f"{display_id} was not marked done.",
+        why,
+        "Open the task and change its state there.")
+
+
 def chat_needs_claim(name):
     return CoordinatorError(
         f"The task was not moved to {name!r}.",
