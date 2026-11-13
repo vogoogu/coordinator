@@ -129,6 +129,15 @@ class McpTest(unittest.TestCase):
         self.assertTrue(err)
         self.assertIn("backlog", text)
 
+    def test_other_chat_specifies_note_with_forms_in_one_update(self):
+        _, t = self.call("task_create", session_id="s1", project="KMU",
+                         title="Later", backlog=True)
+        err, out = self.call("task_update", session_id="s2", id=t["id"],
+                             fields={"goal": "G", "forms": ["497"]})
+        self.assertFalse(err, out)
+        _, shown = self.call("task_show", id=t["id"])
+        self.assertEqual((shown["goal"], shown["forms"]), ("G", ["497"]))
+
     def test_task_create_backlog_missing_state_is_error(self):
         root = Path(self.tmp, "nobl")
         (root / ".coordinator").mkdir(parents=True)

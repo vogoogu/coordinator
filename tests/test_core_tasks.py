@@ -174,6 +174,13 @@ class CoreTasksTest(unittest.TestCase):
         out = core.set_fields(self.conn, n, chat("b"), goal="g")
         self.assertEqual(out["goal"], "g")
 
+    def test_other_chat_can_set_forms_and_open_points_on_parked_note(self):
+        self.project()
+        n = core.create_task(self.conn, "KMU", "later", chat("a"), backlog=True)["id"]
+        self.assertEqual(core.set_forms(self.conn, n, chat("b"), ["497"])["forms"], ["497"])
+        self.assertEqual(core.set_open_points(self.conn, n, chat("b"), ["which db?"])
+                         ["open_points"], ["which db?"])
+
     def test_other_chat_cannot_edit_unclaimed_open_task(self):
         self.project()
         t = core.create_task(self.conn, "KMU", "now", chat("a"))["id"]

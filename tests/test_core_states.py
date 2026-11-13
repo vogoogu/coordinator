@@ -91,6 +91,22 @@ class CoreStatesTest(unittest.TestCase):
         self.assertEqual((e["from_value"], e["to_value"]), ("backlog", "open"))
         self.assertEqual(e["note"], "Daria agreed 2026-11-13")
 
+    def test_moving_claimed_task_into_backlog_ends_its_claim(self):
+        for who, actor in (("s1", PERSON), ("s2", chat("s2"))):
+            t = self.task()["id"]
+            core.claim(self.conn, t, who)
+            self.assertIn(t, core.live_claims(self.conn))
+            core.set_state(self.conn, t, "backlog", actor)
+            self.assertNotIn(t, core.live_claims(self.conn))
+            release = self.events(t, "release")
+            self.assertEqual([e["to_value"] for e in release], ["parked"])
+            self.assertIsNone(core.claim_for_session(self.conn, who))
+
+    def test_parked_rule_does_not_override_a_live_claim(self):
+        n = self.note()
+        self.claim(n, "s9")                      # a raw live claim on a parked task
+        self.assertRefused(core.set_fields, self.conn, n, chat("b"), goal="g")
+
     def test_chat_move_without_note_refuses(self):
         n = self.note()
         core.set_fields(self.conn, n, chat("b"), **self.SPEC)

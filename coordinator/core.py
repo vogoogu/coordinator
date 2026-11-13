@@ -277,14 +277,14 @@ def _require_edit_rights(conn, task, actor: Actor, attempted: str, cfg=None):
     may edit a parked (backlog) task: nobody can claim it, and chats specify it."""
     if actor.type == "person":
         return
-    if cfg is not None and is_parked(cfg, task["state"]):
-        return
     holders = _live_claims(conn, task["pk"])
     if actor.id in holders:
         return
     if holders:
         _refuse(conn, task["pk"], actor,
                 messages.claimed_by_other(task["id"], holders[0]), attempted)
+    if cfg is not None and is_parked(cfg, task["state"]):
+        return
     if task["created_by_type"] == "chat" and task["created_by_id"] == actor.id:
         return
     _refuse(conn, task["pk"], actor, messages.no_edit_rights(task["id"]), attempted)
@@ -344,6 +344,11 @@ def set_state(conn, display_id, new_state, actor: Actor,
                 _end_claim(conn, c["id"], now, CLOSED_BY_PERSON)
                 _event(conn, pk, actor, "release", c["session_id"],
                        CLOSED_BY_PERSON, at=now)
+        if target.kind == "parked":
+            # a note is held by nobody: moving a task into the backlog ends its live claims
+            for c in _live_claim_rows(conn, task_pk=pk):
+                _end_claim(conn, c["id"], now, PARKED)
+                _event(conn, pk, actor, "release", c["session_id"], PARKED, at=now)
     return _task_by_pk(conn, pk)
 
 
@@ -433,10 +438,10 @@ def set_blocked(conn, display_id, actor: Actor, reason: str | None) -> dict:
 
 def set_open_points(conn, display_id, actor: Actor, points: list) -> dict:
     with _write(conn):
-        task, _cfg = _load(conn, display_id)
+        task, cfg = _load(conn, display_id)
         pk = task["pk"]
         attempted = "set open points"
-        _require_edit_rights(conn, task, actor, attempted)
+        _require_edit_rights(conn, task, actor, attempted, cfg)
         if (not isinstance(points, (list, tuple))
                 or not all(isinstance(p, str) for p in points)):
             _refuse(conn, pk, actor, messages.bad_open_points(repr(points)), attempted)
@@ -473,6 +478,7 @@ _OUTCOME_COMMENT = {"done": "handoff", "clarify": "question", "progress": "progr
 COORDINATOR_TOOL_PREFIX = "mcp__coordinator__"
 SYSTEM_LEASE = Actor("system", "lease")
 CLOSED_BY_PERSON = "closed_by_person"
+PARKED = "parked"   # claim end reason: the task was moved into the backlog
 
 
 def _stamp(now: datetime | None = None) -> str:
@@ -949,10 +955,10 @@ def ensure_word(conn, display_id, actor: Actor) -> dict:
 def set_forms(conn, display_id, actor: Actor, forms: list) -> dict:
     """The forms or interfaces the task touches (for the overlap check)."""
     with _write(conn):
-        task, _cfg = _load(conn, display_id)
+        task, cfg = _load(conn, display_id)
         pk = task["pk"]
         attempted = "set forms"
-        _require_edit_rights(conn, task, actor, attempted)
+        _require_edit_rights(conn, task, actor, attempted, cfg)
         if (not isinstance(forms, (list, tuple))
                 or not all(isinstance(f, str) for f in forms)):
             _refuse(conn, pk, actor, messages.bad_forms(repr(forms)), attempted)
