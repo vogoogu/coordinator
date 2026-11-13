@@ -332,6 +332,42 @@ class BoardTest(BoardBase):
         [note] = self.conn.execute("SELECT * FROM start_note").fetchall()   # the first chat there picks it up
         self.assertIsNone(note["taken"])
 
+    def _to_check(self, title="Checkme"):
+        tid = self.task(title=title)
+        core.set_state(self.conn, tid, "review", PERSON, note="finished")
+        return tid
+
+    def test_to_check_column_is_green_with_done_button(self):
+        tid = self._to_check()
+        body = self.get("/p/PA")[1]
+        self.assertRegex(body, r'<section class="col k-fin" aria-label="To check">')
+        self.assertIn('action="/a/done"', body)
+        self.assertIn(f'name="id" value="{tid}"', body)
+        self.assertNotIn('data-confirm="Mark ', body)      # one click, no popup
+
+    def test_no_done_button_outside_to_check(self):
+        self.task(title="Plain open")
+        self.assertNotIn('action="/a/done"', self.get("/p/PA")[1])
+
+    def test_done_button_closes_as_person_in_one_event(self):
+        tid = self._to_check()
+        before = len(core.get_task(self.conn, tid)["history"])
+        status, _, h = self.post("/a/done", {"id": tid, "next": "/p/PA"})
+        self.assertEqual((status, h["Location"]), (303, "/p/PA"))
+        t = core.get_task(self.conn, tid)
+        self.assertEqual(t["state"], "done")
+        self.assertEqual(len(t["history"]), before + 1)
+        ev = t["history"][-1]
+        self.assertEqual((ev["actor_type"], ev["actor_id"]), ("person", getpass.getuser()))
+
+    def test_done_button_refuses_other_states(self):
+        tid = self.task()
+        status, body, _ = self.post("/a/done", {"id": tid})
+        self.assertEqual(status, 400)
+        for w in ("WHAT:", "WHY:", "FIX:"):
+            self.assertIn(w, body)
+        self.assertEqual(core.get_task(self.conn, tid)["state"], "open")
+
     def test_person_set_done_via_board_records_person_actor(self):
         tid = self.task()
         status, _, h = self.post("/a/state", {"id": tid, "state": "done", "note": "ok"})

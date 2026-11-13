@@ -462,6 +462,17 @@ def api_modes(conn) -> dict:
                     if job else None)}
 
 
+def _check_and_done(cfg) -> tuple[str, str]:
+    """The "To check" state (where chats hand finished work: on_done, if it is a handover)
+    and the first finished state the person closes it to. ("", "") when there is no such pair."""
+    if not cfg:
+        return "", ""
+    kinds = _kinds(cfg)
+    done = next((s.name for s in cfg.states if s.kind == "finished"), "")
+    check = cfg.on_done if kinds.get(cfg.on_done) == "handover" else ""
+    return (check, done) if check and done else ("", "")
+
+
 def api_project(conn, key: str) -> dict:
     proj = core.get_project(conn, key)
     cfg, cfg_error = _config_and_error(proj)
@@ -484,7 +495,9 @@ def api_project(conn, key: str) -> dict:
     inbox = [{**cards[t["id"]], "created": t["created"],
               "created_by_type": t["created_by_type"], "created_by_id": t["created_by_id"]}
              for t in tasks if t["inbox"]]
+    check, done = _check_and_done(cfg)
     return {"token": core.board_token(conn),
+            "check_state": check, "done_state": done,
             "project": {"key": proj["key"], "name": proj["name"],
                         "config_error": cfg_error},
             "projects": [{"key": p["key"], "name": p["name"]}
@@ -575,6 +588,20 @@ def do_state(conn, f):
     return tid
 
 
+def do_done(conn, f):
+    """The Done button on a To check card: the person closes it in one step, through core."""
+    tid = _f(f, "id")
+    t = core.get_task(conn, tid)
+    check, done = _check_and_done(_config(core.get_project(conn, t["project"])))
+    if not check:
+        raise messages.cannot_close(tid, "The project has no To check state to close from.")
+    if t["state"] != check:
+        raise messages.cannot_close(
+            tid, f"Only a task in {check!r} can be closed this way; it is in {t['state']!r}.")
+    core.set_state(conn, tid, done, person(), expected_state=check)
+    return tid
+
+
 def do_mode(conn, f):
     core.set_mode(conn, _f(f, "id"), _f(f, "mode"), person())
     return _f(f, "id")
@@ -650,7 +677,7 @@ def do_start(conn, f):
     return tid
 
 
-ACTIONS = {"/a/state": do_state, "/a/mode": do_mode, "/a/force-release": do_force_release,
+ACTIONS = {"/a/state": do_state, "/a/done": do_done, "/a/mode": do_mode, "/a/force-release": do_force_release,
            "/a/pin": do_pin, "/a/comment": do_comment, "/a/create": do_create,
            "/a/start": do_start, "/a/modes": do_modes,
            "/a/make-task": do_make_task}
