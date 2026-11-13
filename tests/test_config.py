@@ -34,15 +34,35 @@ class ConfigTest(unittest.TestCase):
         cfg = self.load('key = "T"\nname = "Test"\n')
         self.assertEqual(cfg.key, "T")
         self.assertEqual(cfg.name, "Test")
-        self.assertEqual(cfg.states[0].name, "open")
+        self.assertEqual(cfg.states[1].name, "open")
         self.assertEqual([s.name for s in cfg.states],
-                         ["open", "ready", "building", "clarify", "review", "done", "dropped"])
+                         ["backlog", "open", "ready", "building", "clarify", "review",
+                          "done", "dropped"])
         self.assertEqual(cfg.default_mode, "read")
         self.assertEqual(cfg.on_done, "review")
         self.assertEqual(cfg.on_clarify, "clarify")
-        ready = cfg.states[1]
+        ready = cfg.states[2]
         self.assertEqual(ready.requires, ["goal", "done_when", "scope"])
+        self.assertEqual(cfg.states[1].requires, [])
+
+    def test_default_config_has_backlog_state_first(self):
+        cfg = self.load('key = "T"\n')
+        self.assertEqual(cfg.states[0].name, "backlog")
+        self.assertEqual(cfg.states[0].kind, "parked")
+        self.assertEqual(cfg.states[0].label, "Backlog")
         self.assertEqual(cfg.states[0].requires, [])
+
+    def test_parked_is_a_valid_kind(self):
+        cfg = self.load('key = "T"\n[[states]]\nname = "later"\nkind = "parked"\n'
+                        '[[states]]\nname = "open"\nkind = "waiting"\n'
+                        '[[states]]\nname = "review"\nkind = "handover"\n'
+                        '[[states]]\nname = "clarify"\nkind = "handover"\n'
+                        '[[states]]\nname = "done"\nkind = "finished"\n')
+        self.assertEqual(cfg.states[0].kind, "parked")
+
+    def test_unknown_kind_still_refused(self):
+        with self.assertRaises(config.ConfigError):
+            self.load('key = "T"\n[[states]]\nname = "later"\nkind = "someday"\n')
 
     def test_missing_file(self):
         with self.assertRaises(config.ConfigError):

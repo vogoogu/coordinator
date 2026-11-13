@@ -7,6 +7,11 @@ on_done = "review"
 on_clarify = "clarify"
 
 [[states]]
+name = "backlog"
+label = "Backlog"
+kind = "parked"
+
+[[states]]
 name = "open"
 label = "Open"
 kind = "waiting"

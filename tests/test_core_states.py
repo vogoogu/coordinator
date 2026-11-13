@@ -78,7 +78,7 @@ class CoreStatesTest(unittest.TestCase):
     def test_unknown_state_lists_valid(self):
         t = self.task()
         self.assertRefused(core.set_state, self.conn, t["id"], "nope", PERSON,
-                           why="Use one of: open, ready")
+                           why="Use one of: backlog, open, ready")
         self.assertEqual(len(self.events(t["id"], "refused")), 1)
 
     def test_chat_cannot_set_done(self):

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .paths import PROJECT_FILE
 
-KINDS = ("waiting", "active", "handover", "finished", "closed")
+KINDS = ("parked", "waiting", "active", "handover", "finished", "closed")
 DEFAULT_FILE = Path(__file__).parent / "default_project.toml"
 
 
