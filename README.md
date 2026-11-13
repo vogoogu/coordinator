@@ -226,13 +226,39 @@ the task back when you write to it: the UserPromptSubmit hook (`hooks.py prompt`
 `install-help`) claims it again if the task is still in the clarify state and nobody
 holds it. If your message is about something else, the chat releases it with `progress`.
 
+## Backlog (notes for the future)
+
+Say "make a note for the future" in any chat: the chat creates a task with the MCP tool
+`task_create` and `backlog: true`. Only the title is needed. The task sits in the state
+`backlog` (kind `parked`), which a project must define in its `.coordinator/project.toml`
+before `open`:
+
+```toml
+[[states]]
+name = "backlog"
+label = "Backlog"
+kind = "parked"
+```
+
+New projects get it from the defaults; an existing project with its own `states` list needs
+the block added by hand (without it, creating a note is refused with the line to add).
+A note is a real task with an ID and a history, but a chat cannot claim it and it is not
+counted as open at session start. The board shows the notes of a project in a collapsed
+Backlog fold (newest first), and each project card on the home page shows "Backlog N".
+
+Any chat may fill in goal, done-when and scope of a note. A note leaves the backlog only when
+all three are set, and a chat also has to give a note that quotes your agreement: the chat
+asks "the spec is ready, move it to open?", you say yes, then it moves the task. The event
+shows who moved it. A note you do not want is moved to `dropped`.
+
 ## Backlog ideas
 
 - **BACKLOG(home)**: since 2026-11-11 the home page lists only tasks that need clarification.
   The old "needs you" overview (stopped chats, leases, blocked, inbox, review, mode guard,
   wiki/desk/feedback/learnings cards) is kept commented out in `board.py` and `pages.py`,
-  and its tests are skipped, all under the marker `BACKLOG(home)`. We must come back and
-  build a proper backlog feature from it (task COORD-5). Search for `BACKLOG(home)`.
+  and its tests are skipped, all under the marker `BACKLOG(home)`. It is parked as a note in
+  the COORD backlog ("Broader needs-you overview"), to be specified later. Search for
+  `BACKLOG(home)`.
 
 ## Before a push
 
