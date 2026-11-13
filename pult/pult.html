@@ -176,7 +176,7 @@ const T = {
   addFolder:"+ Add folder", backlog:"Backlog", backlogH:"Notes for the future, not started on purpose", click:"waits for your click", helper:"helper running", planned:"Planned", plannedH:"Coordinator tasks nobody has started", running:"Running now", runningH:"The chat is working right now",
   waiting:"Waiting for you", waitingH:"The chat ended with a question", review:"Done, check it", reviewH:"The chat answered and stopped",
   broken:"Interrupted", brokenH:"Stopped or closed in the middle of work", lastAnswer:"Last answer", aiSummary:"AI summary", report:"Chat report",
-  goal:"Goal", lastAsk:"Your last request", ask1:"request", askN:"requests", files:"files changed: ", branch:"branch ", resume:"Continue chat",
+  goal:"Goal", lastAsk:"Your last request", ask1:"request", askN:"requests", files:"files changed: ", branch:"branch ", resume:"Continue chat", resumeTip:"Opens this chat in a new terminal window", resumeVs:"Continue in VS Code", resumeVsTip:"Opens the folder in VS Code and this chat in the Claude Code panel", app_vscode:"VS Code", app_desktop:"Claude app", app_terminal:"terminal",
   cmd:"Command", cmdTip:"Copy the terminal command", copied:"Copied", sum:"Summarise with AI", sumBusy:"Summarising…",
   sumTip:"Ask Claude to condense the last answer into 2-4 points (uses your subscription)", empty:"Empty", analyze:"Analyse with AI", reanalyze:"Refresh overview",
   analyzing:"Analysing…", analyzeTip:"Claude reads the folder listing and recent chats and writes what is open (uses your subscription)", overview:"Project overview",
@@ -201,7 +201,7 @@ const T = {
   addFolder:"+ Ordner hinzufügen", backlog:"Backlog", backlogH:"Notizen für später, bewusst nicht begonnen", click:"wartet auf deinen Klick", helper:"Helfer läuft", planned:"Geplant", plannedH:"Coordinator-Aufgaben, die niemand begonnen hat", running:"Läuft gerade", runningH:"Der Chat arbeitet gerade",
   waiting:"Wartet auf dich", waitingH:"Der Chat endete mit einer Frage", review:"Fertig, bitte prüfen", reviewH:"Der Chat hat geantwortet und angehalten",
   broken:"Abgebrochen", brokenH:"Mitten in der Arbeit gestoppt oder geschlossen", lastAnswer:"Letzte Antwort", aiSummary:"KI-Zusammenfassung", report:"Bericht des Chats",
-  goal:"Ziel", lastAsk:"Deine letzte Anfrage", ask1:"Anfrage", askN:"Anfragen", files:"geänderte Dateien: ", branch:"Branch ", resume:"Chat fortsetzen",
+  goal:"Ziel", lastAsk:"Deine letzte Anfrage", ask1:"Anfrage", askN:"Anfragen", files:"geänderte Dateien: ", branch:"Branch ", resume:"Chat fortsetzen", resumeTip:"Öffnet diesen Chat in einem neuen Terminalfenster", resumeVs:"In VS Code fortsetzen", resumeVsTip:"Öffnet den Ordner in VS Code und diesen Chat im Claude-Code-Panel", app_vscode:"VS Code", app_desktop:"Claude-App", app_terminal:"Terminal",
   cmd:"Befehl", cmdTip:"Terminal-Befehl kopieren", copied:"Kopiert", sum:"Mit KI zusammenfassen", sumBusy:"Fasse zusammen…",
   sumTip:"Claude fasst die letzte Antwort in 2-4 Punkten zusammen (verbraucht dein Abo-Kontingent)", empty:"Leer", analyze:"Mit KI analysieren", reanalyze:"Überblick aktualisieren",
   analyzing:"Analysiere…", analyzeTip:"Claude liest die Ordnerliste und die letzten Chats und schreibt, was offen ist (verbraucht dein Abo-Kontingent)", overview:"Projektüberblick",
@@ -315,6 +315,7 @@ function card(s) {
   if (long || compact) { const m = el("button", "more", open ? t("showLess") : t("showMore")); m.onclick = toggle; c.append(m); }
   if (s.chat) {
     const meta = [s.turns + " " + (s.turns === 1 ? t("ask1") : t("askN"))];
+    if (s.app) meta.unshift(t("app_" + s.app));
     if (s.files) meta.push(t("files") + s.files);
     if (s.branch) meta.push(t("branch") + s.branch);
     c.append(el("div", "meta", meta.join(" · ")));
@@ -324,7 +325,7 @@ function card(s) {
     const rs = el("button", "btn main", t("restore")); rs.onclick = () => mark(s, {archived: false}); acts.append(rs);
   } else {
     if (s.chat) {
-      const go = el("button", "btn main", t("resume")); go.disabled = !!busy[s.id + "r"] || !s.resumable;
+      const go = el("button", "btn main", t(s.resume_in === "vscode" ? "resumeVs" : "resume")); go.title = t(s.resume_in === "vscode" ? "resumeVsTip" : "resumeTip"); go.disabled = !!busy[s.id + "r"] || !s.resumable;
       if (!s.resumable) go.title = t("noFolder");
       go.onclick = () => act("/api/resume", s.id, "r"); acts.append(go);
     }
@@ -339,7 +340,7 @@ function card(s) {
     const mm = popMenu(s.id, t("moreBtn") + " ▾"), menu = mm.menu, item = mm.item;
     if (s.chat) {
       if (data.has_claude && !s.ai) item(busy[s.id + "s"] ? t("sumBusy") : t("sum"), () => act("/api/summarize", s.id, "s"), busy[s.id + "s"], t("sumTip"));
-      item(t("cmd"), () => { navigator.clipboard.writeText(`cd "${s.cwd}" && claude --resume ${s.id}`); render(); }, false, t("cmdTip"));
+      item(t("cmd"), () => { navigator.clipboard.writeText(`cd /d "${s.cwd}" && ${data.claude_cmd || "claude"} --resume ${s.id}`); render(); }, false, t("cmdTip"));
     }
     item(t("openFolder"), () => act("/api/open-folder", s.chat ? s.cwd : p.root, "o", s.id));
     item(t("toArchive"), () => mark(s, {archived: true}));

@@ -57,6 +57,55 @@ _paths = {}                    # session id -> transcript path
 _lock = threading.Lock()
 
 
+APPS = {"claude-vscode": "vscode", "claude-desktop": "desktop", "cli": "terminal"}
+
+
+def find_claude() -> str:
+    """Full path of the Claude Code program, or ''. The `claude` command from PATH;
+    without it (Claude Code used only inside VS Code) the copy that the newest
+    VS Code extension brings along."""
+    exe = shutil.which("claude")
+    if exe:
+        return exe
+    home = Path.home()
+    found = [home / ".local" / "bin" / "claude.exe"]
+    try:
+        found += sorted((home / ".vscode" / "extensions").glob(
+            "anthropic.claude-code-*/resources/native-binary/claude.exe"),
+            key=lambda f: f.stat().st_mtime, reverse=True)
+    except OSError:
+        pass
+    for f in found:
+        if f.is_file():
+            return str(f)
+    return ""
+
+
+def claude_command() -> str:
+    """How to type the program in a terminal: `claude`, or the quoted full path."""
+    if shutil.which("claude"):
+        return "claude"
+    exe = find_claude()
+    return f'"{exe}"' if exe else "claude"
+
+
+def open_in_vscode(cwd: str, query: str) -> str:
+    """Open the folder in VS Code, then hand the Claude Code extension a link
+    (vscode://anthropic.claude-code/open?session=<id> or ?prompt=<text>). The link
+    goes to the VS Code window that is in front, so the folder is opened first and
+    the link follows a few seconds later. Returns an error text or ''."""
+    if sys.platform != "win32":
+        return "This button works on Windows only."
+    if not shutil.which("code"):
+        return "The VS Code command (code) was not found in PATH."
+    try:
+        subprocess.Popen(["cmd", "/c", "code", cwd], creationflags=subprocess.CREATE_NO_WINDOW)
+    except OSError as e:
+        return f"Could not open VS Code: {e}"
+    threading.Timer(3.0, os.startfile, [f"vscode://anthropic.claude-code/open?{query}"]).start()
+    return ""
+
+
 def claude_dir() -> Path:
     return Path(os.environ.get("PULT_CLAUDE_DIR") or (Path.home() / ".claude"))
 
@@ -107,7 +156,7 @@ def _asks_question(text: str) -> bool:
 
 
 def parse_session(path: Path):
-    title = cwd = branch = ""
+    title = cwd = branch = entry = ""
     first_prompt = last_prompt = last_answer = ""
     turns = 0
     files = set()
@@ -126,6 +175,7 @@ def parse_session(path: Path):
                         title = e[k].strip()
                 cwd = e.get("cwd") or cwd
                 branch = e.get("gitBranch") or branch
+                entry = e.get("entrypoint") or entry
                 msg = e.get("message") if isinstance(e.get("message"), dict) else {}
                 content = msg.get("content")
                 kind = e.get("type")
@@ -161,7 +211,7 @@ def parse_session(path: Path):
             "first_prompt": _short(first_prompt, 300), "last_prompt": _short(last_prompt, 300),
             "last_answer": last_answer[-4000:], "bullets": bullets_from(last_answer),
             "asks": _asks_question(last_answer) if last_answer else False,
-            "turns": turns, "files": len(files), "last": last}
+            "turns": turns, "files": len(files), "last": last, "app": APPS.get(entry, "")}
 
 
 def _status(parsed, age: float) -> str:
@@ -397,7 +447,7 @@ def scan(since: float, until: float = 0) -> dict:
         s = {"id": sid, "cwd": cwd, "root": _root_of(cwd, added), "updated": st.st_mtime,
              "status": _status(parsed, now - st.st_mtime),
              "ai": summ["bullets"] if summ else None, "resumable": os.path.isdir(cwd),
-             "chat": True,
+             "chat": True, "app": parsed["app"], "resume_in": resume_where(parsed["app"]),
              **{k: parsed[k] for k in ("title", "branch", "first_prompt",
                                        "last_prompt", "bullets", "turns", "files")}}
         task = by_session.get(sid)
@@ -445,7 +495,7 @@ def scan(since: float, until: float = 0) -> dict:
                 for n, r in roots.items()]
     return {"sessions": out, "projects": projects, "now": now, "sources": stats,
             "found": any(x["found"] for x in stats),
-            "has_claude": bool(shutil.which("claude")),
+            "has_claude": bool(find_claude()), "claude_cmd": claude_command(),
             "coordinator": bool(by_session or planned),
             "version": VERSION, "stale": code_version() != VERSION}
 
@@ -468,7 +518,9 @@ def start_claude(cwd: str, model: str = "", prompt: str = "", title: str = "") -
     The prompt travels in an environment variable, so cmd never parses its text."""
     model = model if model in MODELS else ""
     prompt = re.sub(r"\s+", " ", prompt.replace('"', "'")).strip()[:4000]
-    line = "claude" + (f" --model {model}" if model else "") + (' "%PULT_PROMPT%"' if prompt else "")
+    if not find_claude():
+        return "Claude Code was not found: neither the claude command nor the VS Code extension."
+    line = claude_command() + (f" --model {model}" if model else "") + (' "%PULT_PROMPT%"' if prompt else "")
     if sys.platform != "win32":
         return f'This button works on Windows only. Command: cd "{cwd}" && {line}'
     title = re.sub(r'[^\w .\-]', "", title)[:60] or "claude"
@@ -499,8 +551,18 @@ def new_chat(body: dict) -> dict:
     return {"ok": not err, "error": err}
 
 
+def resume_where(app: str) -> str:
+    """'vscode' or 'terminal': where Continue chat opens a chat. A chat that ran in
+    VS Code goes back to VS Code; so does every chat when there is no claude
+    program for a terminal."""
+    if shutil.which("code") and (app == "vscode" or not find_claude()):
+        return "vscode"
+    return "terminal"
+
+
 def resume(body: dict) -> dict:
-    """Open this chat in a new console window (claude --resume)."""
+    """Continue this chat: in VS Code (the Claude Code panel opens the session) or in
+    a new console window (claude --resume)."""
     sid = str(body.get("id") or "")
     path = _session_file(sid)
     parsed = parse_session(path) if path else None
@@ -509,8 +571,15 @@ def resume(body: dict) -> dict:
     if sys.platform != "win32":
         return {"ok": False, "error": "This button works on Windows only. Command: "
                 f'cd "{parsed["cwd"]}" && claude --resume {sid}'}
+    if resume_where(parsed["app"]) == "vscode":
+        err = open_in_vscode(parsed["cwd"], "session=" + sid)
+        return {"ok": not err, "error": err}
+    exe = find_claude()
+    if not exe:
+        return {"ok": False, "error": "Claude Code was not found: neither the claude command "
+                "nor the VS Code extension."}
     try:
-        subprocess.Popen(["cmd", "/k", "claude", "--resume", sid], cwd=parsed["cwd"],
+        subprocess.Popen(["cmd", "/k", exe, "--resume", sid], cwd=parsed["cwd"],
                          creationflags=subprocess.CREATE_NEW_CONSOLE)
     except OSError as e:
         return {"ok": False, "error": f"Could not open the window: {e}"}
@@ -520,9 +589,9 @@ def resume(body: dict) -> dict:
 def run_claude(prompt: str, timeout: int = 180):
     """Run `claude -p` (uses the subscription, so only on a button press).
     Returns (answer text, error text)."""
-    exe = shutil.which("claude")
+    exe = find_claude()
     if not exe:
-        return "", "The claude command was not found in PATH."
+        return "", "Claude Code was not found: neither the claude command nor the VS Code extension."
     CACHE_DIR.mkdir(exist_ok=True)
     try:
         r = subprocess.run([exe, "-p", "--model", "haiku"], input=prompt,
@@ -894,7 +963,7 @@ def setup_status(body=None) -> dict:
     reg_n = [_norm(r["root"]) for r in regs]
     folders_ = [{"path": f, "covered": any(_norm(f) == r or _norm(f).startswith(r + "/")
                                            for r in reg_n)} for f in folders()]
-    return {"ok": True, "repo": str(repo or ""), "has_claude": bool(shutil.which("claude")),
+    return {"ok": True, "repo": str(repo or ""), "has_claude": bool(find_claude()),
             "settings_error": err, "repairable": bool(err) and _repairable(), "hooks": bool(settings) and _hooks_on(settings),
             "mcp": _mcp_on(), "rule": _rule_on(), "registered": regs, "folders": folders_}
 
@@ -935,9 +1004,10 @@ def setup_hooks(body: dict) -> dict:
 
 def setup_mcp(body: dict) -> dict:
     on = bool(body.get("on"))
-    exe = shutil.which("claude")
+    exe = find_claude()
     if not exe:
-        return {"ok": False, "error": "The claude command was not found in PATH."}
+        return {"ok": False, "error": "Claude Code was not found: neither the claude command "
+                "nor the VS Code extension."}
     if on == _mcp_on():
         return {"ok": True}
     if on:

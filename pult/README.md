@@ -48,8 +48,12 @@ Running `START.bat` again replaces an older running version of Pult.
   to scale the whole board (for a second monitor or a small laptop).
 
 ### Start and continue work from the board
-- **Continue chat:** reopens that chat in a new terminal window
-  (`claude --resume`).
+- **Continue chat:** a chat that ran in VS Code opens in VS Code again (the
+  folder, then the chat in the Claude Code panel; needs the `code` command).
+  Other chats reopen in a new terminal window (`claude --resume`). The card
+  says where a chat ran: VS Code, Claude app or terminal.
+- The `claude` command does not have to be in PATH: without it Pult uses the
+  copy that the Claude Code extension of VS Code brings along.
 - **New chat:** starts Claude Code in a project folder with a first message
   and a model (Opus / Sonnet / Haiku).
 - **Open folder** and **Copy path**.
