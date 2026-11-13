@@ -33,9 +33,20 @@ class BacklogBoardTest(BoardBase):
         self.assertIn(f'href="/t/{n}"', body)
         self.assertIn("Cache the index", body)
         self.assertRegex(body, r'(?s)id="backlog".*?<span class="count">1</span>')
-        opened = re.search(r'id="backlog".*?<details( open)?>', body, re.S)
+        opened = re.search(r'id="backlog".*?<details([^>]*)>', body, re.S)
         self.assertIsNotNone(opened)
-        self.assertIsNone(opened.group(1))          # collapsed by default
+        self.assertNotIn(" open", opened.group(1))          # collapsed by default
+
+    def test_backlog_fold_keeps_its_state_over_a_refresh(self):
+        # the page reloads itself when anything is written (COORD-6): the fold is marked so
+        # board.js can restore it, and opens when the page is reached by #backlog
+        self.note()
+        self.assertIn('<details data-keep="backlog">', self.get("/p/PA")[1])
+        script = self.get("/static/board.js")[1]
+        self.assertIn("data-keep", script)
+        self.assertIn("sessionStorage", script)
+        self.assertIn("location.hash", script)
+        self.assertIn("    keepFolds();\n", script)       # called from the load handler
 
     def test_project_page_without_notes_has_no_fold(self):
         self.task("PA", "Real work")

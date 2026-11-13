@@ -85,6 +85,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     foldColumns();
+    keepFolds();
     var tables = document.querySelectorAll("table.modes");
     for (var t = 0; t < tables.length; t++) { syncSelectAll(tables[t]); }
     if (wide.addEventListener) { wide.addEventListener("change", foldColumns); }
@@ -95,6 +96,22 @@
     }
     if (location.hash === "#new-task") { openDialog(document.getElementById("new-task")); }
   });
+
+  // Folds marked data-keep keep their open/closed state over the page's self-refresh
+  // (kept per tab in sessionStorage), and open when the page is reached by their #id.
+  function keepFold(d) {
+    var key = "fold:" + location.pathname + ":" + d.getAttribute("data-keep");
+    try { if (sessionStorage.getItem(key) === "1") { d.open = true; } } catch (e) { /* no storage */ }
+    if (d.parentNode && d.parentNode.id && location.hash === "#" + d.parentNode.id) { d.open = true; }
+    d.addEventListener("toggle", function () {
+      try { sessionStorage.setItem(key, d.open ? "1" : "0"); } catch (e) { /* no storage */ }
+    });
+  }
+
+  function keepFolds() {
+    var folds = document.querySelectorAll("details[data-keep]");
+    for (var i = 0; i < folds.length; i++) { keepFold(folds[i]); }
+  }
 
   // Self-refresh: pages marked data-live ask /api/pulse every few seconds (a few bytes)
   // and reload only when something was written. Never while a dialog is open or a field
