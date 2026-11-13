@@ -306,6 +306,13 @@ class OverlapTest(ChainBase):
         self.assertEqual(out[0]["forms"], ["458", "999"])
         self.assertTrue(out[0]["name"].startswith(f"{c} spec"))
 
+    def test_overlaps_ignores_parked_notes(self):
+        a = self.task("A")
+        note = core.create_task(self.conn, "KMU", "later", PERSON, backlog=True)["id"]
+        core.set_forms(self.conn, note, PERSON, ["497"])
+        core.set_forms(self.conn, a, PERSON, ["497"])
+        self.assertEqual([o["id"] for o in core.overlaps(self.conn, a)], [])
+
     def test_forms_argument_overrides_the_tasks_own(self):
         a, b = self.task("A"), self.task("B")
         core.set_forms(self.conn, b, PERSON, ["497"])

@@ -131,6 +131,43 @@ class CoreTasksTest(unittest.TestCase):
         for i in range(5):
             core.create_task(self.conn, "KMU", f"p{i}", PERSON)
 
+    def test_create_backlog_note_with_title_only(self):
+        self.project()
+        t = core.create_task(self.conn, "KMU", "Maybe cache it", chat(), backlog=True)
+        self.assertEqual(t["state"], "backlog")
+        self.assertEqual((t["goal"], t["done_when"], t["scope"]), ("", "", ""))
+        self.assertIs(t["inbox"], False)
+        created = [e for e in core.get_task(self.conn, t["id"])["history"]
+                   if e["action"] == "created"]
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["to_value"], "backlog")
+
+    def test_backlog_note_counts_toward_chat_limit(self):
+        self.project()
+        for i in range(3):
+            core.create_task(self.conn, "KMU", f"n{i}", chat(), backlog=True)
+        with self.assertRaises(core.CoordinatorError):
+            core.create_task(self.conn, "KMU", "n4", chat(), backlog=True)
+
+    def test_create_backlog_without_parked_state_refuses(self):
+        root = Path(self.tmp, "nobl")
+        (root / ".coordinator").mkdir(parents=True)
+        (root / ".coordinator" / "project.toml").write_text(
+            'key = "NB"\nname = "No backlog"\n'
+            '[[states]]\nname = "open"\nkind = "waiting"\n'
+            '[[states]]\nname = "building"\nkind = "active"\n'
+            '[[states]]\nname = "clarify"\nkind = "handover"\n'
+            '[[states]]\nname = "review"\nkind = "handover"\n'
+            '[[states]]\nname = "done"\nkind = "finished"\n', encoding="utf-8")
+        core.add_project(self.conn, str(root), PERSON)
+        with self.assertRaises(core.CoordinatorError) as cm:
+            core.create_task(self.conn, "NB", "x", chat(), backlog=True)
+        self.assertEqual([l.split(":")[0] for l in str(cm.exception).split("\n")],
+                         ["WHAT", "WHY", "FIX"])
+        self.assertIn("NB", cm.exception.what)
+        self.assertIn("parked", cm.exception.fix)
+        self.assertEqual(core.list_tasks(self.conn, "NB"), [])
+
     def test_project_for_path_finds_nested_file(self):
         p = self.project()
         f = Path(p["root"], "sub", "deep", "x.txt")

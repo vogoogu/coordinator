@@ -45,6 +45,17 @@ class CoreClaimsTest(unittest.TestCase):
         h = core.get_task(self.conn, display_id)["history"]
         return [e for e in h if action is None or e["action"] == action]
 
+    def test_claim_refuses_parked_task(self):
+        note = self.task(chat(), backlog=True)
+        self.assertRefused(core.claim, self.conn, note["id"], "s9", why="backlog")
+        self.assertEqual(core.get_task(self.conn, note["id"])["state"], "backlog")
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM claim").fetchone()[0], 0)
+
+    def test_waiting_only_claim_ignores_parked(self):
+        note = self.task(chat(), backlog=True)
+        self.assertIsNone(core.claim(self.conn, note["id"], "s9", waiting_only=True))
+        self.assertEqual(self.conn.execute("SELECT COUNT(*) FROM claim").fetchone()[0], 0)
+
     def stat(self, session):
         return self.conn.execute(
             "SELECT * FROM session_stat WHERE session_id = ?", (session,)).fetchone()

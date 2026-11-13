@@ -183,6 +183,22 @@ def claim_final(display_id, state):
         "Ask the person to reopen it, or pick another task.")
 
 
+def claim_parked(display_id):
+    return ClaimError(
+        f"{display_id} was not claimed.",
+        "The task is parked in the backlog: it is not specified yet.",
+        "Specify it (goal, done when, scope), get the person's agreement, "
+        "then move it to open.")
+
+
+def no_backlog_state(project_key):
+    return CoordinatorError(
+        f"The note was not created in {project_key}.",
+        "The project has no backlog state.",
+        'Add a state with kind = "parked" (for example name = "backlog") before '
+        "open in .coordinator/project.toml.")
+
+
 def session_has_claim(display_id, held):
     return ClaimError(
         f"{display_id} was not claimed.",

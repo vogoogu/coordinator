@@ -140,15 +140,26 @@ def _config(root: str, what: str):
         raise messages.project_config_bad(root, e, what) from None
 
 
+def is_parked(cfg, state_name: str) -> bool:
+    """True when the state is of kind "parked" (the backlog: not specified yet)."""
+    return any(s.name == state_name and s.kind == "parked" for s in cfg.states)
+
+
 def create_task(conn, project_key: str, title: str, actor: Actor, goal="",
                 done_when="", scope="", origin="",
-                inbox: bool | None = None) -> dict:
+                inbox: bool | None = None, backlog: bool = False) -> dict:
     proj = _project_row(conn, project_key)
     cfg = _config(proj["root"], "The task was not created.")
-    first = next((s for s in cfg.states if s.kind == "waiting"), None)
-    if first is None:
-        raise messages.project_config_bad(proj["root"], "no waiting state defined",
-                                          "The task was not created.")
+    if backlog:
+        first = next((s for s in cfg.states if s.kind == "parked"), None)
+        if first is None:
+            raise messages.no_backlog_state(proj["key"])
+        inbox = False
+    else:
+        first = next((s for s in cfg.states if s.kind == "waiting"), None)
+        if first is None:
+            raise messages.project_config_bad(proj["root"], "no waiting state defined",
+                                              "The task was not created.")
     if inbox is None:
         inbox = False  # chat tasks go straight to the first waiting state (Daria, 2026-11-11)
     if not str(title or "").strip():
@@ -531,6 +542,8 @@ def claim(conn, display_id, session_id, transcript_path="", cwd="",
         kinds = {s.name: s.kind for s in cfg.states}
         if waiting_only and kinds.get(task["state"]) != "waiting":
             return None
+        if kinds.get(task["state"]) == "parked":
+            _refuse(conn, pk, actor, messages.claim_parked(task["id"]), attempted)
         if holders:
             _refuse(conn, pk, actor,
                     messages.already_claimed(task["id"], holders[0]["session_id"]),
@@ -949,10 +962,10 @@ def set_forms(conn, display_id, actor: Actor, forms: list) -> dict:
 def overlaps(conn, display_id: str, forms: list | None = None) -> list:
     """The other open tasks of this task's project, with the forms they touch.
     Each entry says which forms it shares with `forms` (default: the task's own).
-    Open means not in a finished or closed state. Read only."""
+    Open means not in a finished, closed or parked (backlog) state. Read only."""
     task, cfg = _load(conn, display_id)
     mine = set(task["forms"] if forms is None else forms)
-    final = {s.name for s in cfg.states if s.kind in ("finished", "closed")}
+    final = {s.name for s in cfg.states if s.kind in ("finished", "closed", "parked")}
     live = live_claims(conn)
     out = []
     for t in list_tasks(conn, task["project"]):
