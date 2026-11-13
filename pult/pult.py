@@ -234,28 +234,48 @@ def _subfolders(folder: str) -> list:
 
 
 def sources() -> list:
-    """Folders where chat transcripts are kept: Claude Code, and (best effort)
-    the local sessions of the Claude desktop app."""
-    out = [claude_dir() / "projects"]
-    appdata = os.environ.get("APPDATA")
-    if appdata and not os.environ.get("PULT_CLAUDE_DIR"):
-        out.append(Path(appdata) / "Claude" / "local-agent-mode-sessions")
-    return out
+    """Folders where chat transcripts are kept. Only Claude Code: the terminal, the
+    VS Code extension and the Code tab of the Claude desktop app all write to
+    <home>/.claude/projects. Cowork sessions (the desktop app's
+    local-agent-mode-sessions folder) are left out on purpose."""
+    return [claude_dir() / "projects"]
 
 
 # ---------------------------------------------- coordinator (read-only)
 STATE_STATUS = {"clarify": "waiting", "review": "review", "done": "done", "dropped": "done"}
+ACTIVE_STATES = ("building",)          # a chat holds the task and works on it
+PLANNED_STATES = ("open", "ready")     # waiting for a chat
+BACKLOG_STATES = ("backlog",)          # notes for the future, nobody may claim them
+
+
+def coordinator_home() -> Path:
+    """The coordinator data folder, found the way coordinator/paths.py finds it:
+    COORDINATOR_HOME, then <home>/.coordinator, then the old %LOCALAPPDATA% folder
+    (only while the new one has no database yet). Never creates or copies anything."""
+    env = os.environ.get("COORDINATOR_HOME")
+    if env:
+        return Path(env)
+    new = Path(os.environ.get("USERPROFILE") or str(Path.home())) / ".coordinator"
+    old = Path(os.environ.get("LOCALAPPDATA")
+               or str(Path.home() / "AppData" / "Local")) / "coordinator"
+    if not (new / "coordinator.db").is_file() and (old / "coordinator.db").is_file():
+        return old
+    return new
 
 
 def coordinator_db() -> Path:
-    base = os.environ.get("COORDINATOR_HOME") or os.path.join(
-        os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local"), "coordinator")
-    return Path(base) / "coordinator.db"
+    return coordinator_home() / "coordinator.db"
+
+
+def _columns(conn, table: str) -> set:
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
 
 
 def coordinator_data():
-    """Tasks from Darya's coordinator database, if it exists on this computer.
-    Returns ({session_id: task info}, [planned tasks]). Never writes."""
+    """Tasks from the coordinator database, if it exists on this computer.
+    Returns ({session_id: task info}, [tasks without a chat]). Never writes.
+    Columns of newer database versions (chat-name word, waits-for-click mark,
+    running helpers) are read only when they exist."""
     db = coordinator_db()
     if not db.is_file():
         return {}, []
@@ -263,26 +283,51 @@ def coordinator_data():
         conn = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True, timeout=2)
         conn.row_factory = sqlite3.Row
         try:
+            word = "t.word" if "word" in _columns(conn, "task") else "''"
+            click = "cl.waiting_click" if "waiting_click" in _columns(conn, "claim") else "NULL"
+            helpers = ("(SELECT ss.helpers FROM session_stat ss WHERE ss.session_id = "
+                       "cl.session_id)" if "helpers" in _columns(conn, "session_stat") else "0")
             note = ("(SELECT text FROM comment c WHERE c.task_id = t.id AND c.kind IN"
                     " ('handoff','question','progress') ORDER BY c.id DESC LIMIT 1)")
             by_session = {}
             for r in conn.execute(
                     "SELECT cl.session_id, cl.ended, t.number, t.state, t.title, p.key, "
+                    f"{word} AS word, {click} AS click, {helpers} AS helpers, "
                     f"{note} AS note FROM claim cl JOIN task t ON t.id = cl.task_id "
                     "JOIN project p ON p.id = t.project_id ORDER BY cl.id"):
+                live = r["ended"] is None
                 by_session[r["session_id"]] = {
                     "task": f"{r['key']}-{r['number']}", "state": r["state"],
-                    "task_title": r["title"], "live": r["ended"] is None, "note": r["note"] or ""}
+                    "task_title": r["title"], "live": live, "note": r["note"] or "",
+                    "word": r["word"] or "", "click": live and bool(r["click"]),
+                    "helpers": int(r["helpers"] or 0) if live else 0}
+            states = PLANNED_STATES + BACKLOG_STATES
+            marks = ",".join("?" * len(states))
             planned = [dict(r) for r in conn.execute(
-                "SELECT t.number, t.state, t.title, t.goal, t.done_when, t.updated, p.key, p.root "
+                "SELECT t.number, t.state, t.title, t.goal, t.done_when, t.updated, p.key, "
+                f"p.root, {word} AS word "
                 "FROM task t JOIN project p ON p.id = t.project_id "
-                "WHERE t.state IN ('open','ready') AND NOT EXISTS "
-                "(SELECT 1 FROM claim cl WHERE cl.task_id = t.id AND cl.ended IS NULL)")]
+                f"WHERE t.state IN ({marks}) AND NOT EXISTS "
+                "(SELECT 1 FROM claim cl WHERE cl.task_id = t.id AND cl.ended IS NULL)",
+                states)]
         finally:
             conn.close()
         return by_session, planned
     except (sqlite3.Error, OSError, ValueError):
         return {}, []
+
+
+def task_status(task: dict, guess: str) -> str:
+    """Board column of a chat that holds or held a coordinator task. The reported
+    state wins over the guess from the transcript."""
+    if task["state"] in STATE_STATUS:
+        return STATE_STATUS[task["state"]]
+    if task["live"] and task["state"] in ACTIVE_STATES:
+        if task["click"]:
+            return "waiting"           # Claude Code stopped on a permission question
+        if task["helpers"]:
+            return "running"           # a background helper works, the chat file is quiet
+    return guess
 
 
 def _epoch(iso: str, default: float) -> float:
@@ -357,8 +402,9 @@ def scan(since: float, until: float = 0) -> dict:
                                        "last_prompt", "bullets", "turns", "files")}}
         task = by_session.get(sid)
         if task:                   # exact state reported through coordinator
-            s.update(task=task["task"], state=task["state"])
-            s["status"] = STATE_STATUS.get(task["state"], s["status"])
+            s.update(task=task["task"], state=task["state"], word=task["word"],
+                     click=task["click"], helpers=task["helpers"])
+            s["status"] = task_status(task, s["status"])
             if task["note"] and not task["live"]:
                 s["bullets"] = bullets_from(task["note"]) or s["bullets"]
         s["tr"] = {lang: t for lang in LANGS
@@ -369,7 +415,8 @@ def scan(since: float, until: float = 0) -> dict:
         goal = [x for x in (t["goal"], t["done_when"]) if x]
         out.append({"id": f"task:{t['key']}-{t['number']}", "cwd": t["root"],
                     "root": _root_of(t["root"], added), "updated": _epoch(t["updated"], now),
-                    "status": "planned", "ai": None, "resumable": False, "chat": False,
+                    "status": "backlog" if t["state"] in BACKLOG_STATES else "planned",
+                    "word": t["word"] or "", "ai": None, "resumable": False, "chat": False,
                     "task": f"{t['key']}-{t['number']}", "state": t["state"],
                     "title": _short(t["title"], 90), "branch": "", "first_prompt": "",
                     "last_prompt": "", "bullets": [_short(g, 170) for g in goal],
@@ -656,11 +703,37 @@ In a folder registered in coordinator, before you change any file:
 1. Create a task for the user's request with the MCP tool task_create
    (short title, goal, done_when, scope), then claim it with task_claim.
 2. When you finish or stop, call task_release with outcome done, clarify
-   or progress and a short note in English."""
+   or progress and a short note in English.
+3. When the user asks for a note for the future, create it with task_create
+   and backlog: true (only the title is needed). Do not claim it.
+4. A background helper reports with task_comment and its role
+   (for example build 1, test 1)."""
+# The same list as coordinator/cli.py (install-help). hook_events() reads the list
+# from the coordinator next to Pult, so a newer coordinator brings its own hooks;
+# this copy is used only when that import fails.
+POST_TOOL_MATCHER = ("Write|Edit|MultiEdit|NotebookEdit|Read|Grep|Glob|Bash|PowerShell"
+                     "|WebFetch|WebSearch|Agent|Task|mcp__.*")
 HOOK_EVENTS = (("SessionStart", None, "session-start"),
                ("PreToolUse", "Write|Edit|MultiEdit|NotebookEdit", "pre-tool"),
-               ("PostToolUse", None, "post-tool"),
-               ("Stop", None, "stop"))
+               ("PostToolUse", POST_TOOL_MATCHER, "post-tool"),
+               ("Stop", None, "stop"),
+               ("UserPromptSubmit", None, "prompt"),
+               ("Notification", "permission_prompt", "notification"),
+               ("SubagentStart", None, "subagent-start"),
+               ("SubagentStop", None, "subagent-stop"))
+
+
+def hook_events() -> tuple:
+    repo = coordinator_repo()
+    if repo:
+        try:
+            if str(repo) not in sys.path:
+                sys.path.insert(0, str(repo))
+            from coordinator.cli import HOOK_EVENTS as events
+            return tuple(events)
+        except Exception:
+            pass
+    return HOOK_EVENTS
 
 
 def coordinator_repo():
@@ -781,7 +854,7 @@ def _hooks_on(data) -> bool:
     hooks = data.get("hooks") if isinstance(data, dict) else None
     return isinstance(hooks, dict) and all(
         any(_is_coord_hook(e) for e in hooks.get(name) or [] if isinstance(hooks.get(name), list))
-        for name, _, _ in HOOK_EVENTS)
+        for name, _, _ in hook_events())
 
 
 def _mcp_on() -> bool:
@@ -838,7 +911,7 @@ def setup_hooks(body: dict) -> dict:
     if hooks is not None and not isinstance(hooks, dict):
         return {"ok": False, "error": "The hooks entry in settings.json has an unexpected form."}
     hooks = dict(hooks or {})
-    for name, matcher, event in HOOK_EVENTS:
+    for name, matcher, event in hook_events():
         kept = [e for e in hooks.get(name) or [] if not _is_coord_hook(e)]
         if on:
             entry = {"hooks": [{"type": "command", "timeout": 30, "command":
@@ -980,54 +1053,6 @@ def testbed(body: dict) -> dict:
     return {"ok": True, "root": str(root), "started": len(make_testbed.TASKS)}
 
 
-_fcache = {}                   # folder -> (time, info)
-
-
-def folder_info(root: str) -> dict:
-    """Recent activity of a folder from file times: works for any tool that changes
-    files there (Cowork, Claude Code, an editor). Cached for a minute."""
-    hit = _fcache.get(root)
-    if hit and time.time() - hit[0] < 60:
-        return hit[1]
-    base, recent, count, last = Path(root), [], 0, 0.0
-    for dirpath, dirnames, filenames in os.walk(root):
-        depth = len(Path(dirpath).relative_to(base).parts)
-        dirnames[:] = [] if depth >= 4 else [
-            d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            if fn.startswith("."):
-                continue
-            try:
-                m = (Path(dirpath) / fn).stat().st_mtime
-            except OSError:
-                continue
-            count += 1
-            last = max(last, m)
-            recent.append((m, str((Path(dirpath) / fn).relative_to(base))))
-            if len(recent) > 50:
-                recent = sorted(recent, reverse=True)[:5]
-        if count > 3000:
-            break
-    info = {"files": count, "last": last,
-            "recent": [{"path": p, "mtime": m} for m, p in sorted(recent, reverse=True)[:5]]}
-    _fcache[root] = (time.time(), info)
-    return info
-
-
-def folders_view(body=None) -> dict:
-    """The Folders tab: every added folder with its project subfolders."""
-    briefs = _load(BRIEF_FILE)
-    groups = []
-    for f in folders():
-        subs = _subfolders(f) or [f]
-        projects = [{"root": r, "name": _name(r), "hue": _hue(_norm(r)), **folder_info(r),
-                     "brief": (briefs.get(_norm(r)) or {}).get("bullets")} for r in subs]
-        projects.sort(key=lambda p: -p["last"])
-        groups.append({"root": f, "name": _name(f), "exists": os.path.isdir(f),
-                       "projects": projects})
-    return {"ok": True, "groups": groups, "now": time.time()}
-
-
 def mark_card(body: dict) -> dict:
     """Store the user's mark on a card: done, archived, priority (0-3)."""
     cid = str(body.get("id") or "")
@@ -1064,7 +1089,7 @@ ACTIONS = {"/api/resume": resume, "/api/summarize": summarize, "/api/brief": bri
            "/api/setup": setup_status, "/api/setup/hooks": setup_hooks,
            "/api/setup/mcp": setup_mcp, "/api/setup/rule": setup_rule,
            "/api/setup/register": setup_register, "/api/setup/repair": setup_repair,
-           "/api/add-folder": add_folder, "/api/new-chat": new_chat, "/api/folders": folders_view, "/api/card": mark_card, "/api/testbed": testbed, "/api/remove-folder": remove_folder}
+           "/api/add-folder": add_folder, "/api/new-chat": new_chat, "/api/card": mark_card, "/api/testbed": testbed, "/api/remove-folder": remove_folder}
 
 
 # ---------------------------------------------------------------- server

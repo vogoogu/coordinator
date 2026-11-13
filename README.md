@@ -23,6 +23,15 @@ for example `Test-NetConnection 127.0.0.1 -Port 8790` in PowerShell. Don't load 
 page for that: every page request also expires stale leases, which can move tasks
 and show pop-ups.
 
+## Pult: all chats on one board
+`pult\START.bat` opens a second board at http://127.0.0.1:8791. It shows every Claude Code
+chat on this computer (terminal, VS Code and the Code tab of the Claude desktop app; no
+Cowork sessions), grouped by status or by project, also for folders that are not registered
+here. For registered projects it shows the exact task state from this coordinator: Backlog
+and Planned columns, the chat-name word, "waits for your click" and "helper running". Its
+Setup dialog switches the hooks, the MCP server and the global rule on and off in one click
+(with a backup copy of every file it changes). Details: `pult\README.md`.
+
 ## Set up on a new laptop
 
 Easiest: open this folder in Claude Code and say "set this up for me". It follows

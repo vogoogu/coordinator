@@ -70,6 +70,7 @@ h1 small{font-weight:400;color:var(--mute);font-size:13px;margin-left:8px}
 .brief{background:var(--card);border-radius:10px;padding:9px 12px;margin-bottom:9px;border:1px dashed var(--line)}
 .brief ul{margin:0;padding-left:17px}
 .tag{display:inline-block;border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:11.5px;color:var(--mute);margin-left:6px;text-decoration:none}
+.tag.flag{color:var(--wait);border-color:var(--wait)}
 .colacts{display:flex;flex-wrap:wrap;gap:6px;margin:0 4px 10px}
 .dates{display:inline-flex;align-items:center;gap:6px;color:var(--mute);font-size:13px}
 .dates input{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color-scheme:light dark}
@@ -129,7 +130,7 @@ body.compact .card .title{border-bottom:0;padding-bottom:0;margin-bottom:4px;fon
 <div id="banner" hidden></div>
 <header>
   <h1>Pult <small id="sub"></small></h1>
-  <div class="seg" id="view"><button data-v="status" class="on" data-t="byStatus"></button><button data-v="project" data-t="byProject"></button><button data-v="folders" data-t="foldersTab"></button><button data-v="archive" id="archTab"></button></div>
+  <div class="seg" id="view"><button data-v="status" class="on" data-t="byStatus"></button><button data-v="project" data-t="byProject"></button><button data-v="archive" id="archTab"></button></div>
   <div class="seg" id="days"><button data-d="1" data-t="today"></button><button data-d="7" class="on" data-t="d7"></button><button data-d="30" data-t="d30"></button><button data-d="90" data-t="d90"></button><button data-d="3650" data-t="all"></button></div>
   <span class="dates"><span data-t="from"></span><input type="date" id="from"><span data-t="to"></span><input type="date" id="to"></span>
   <button class="btn" id="add" data-t="addFolder"></button>
@@ -151,8 +152,7 @@ const OLD_SERVER = VERSION === "__" + "VERSION__";
 const T = {
  en: {sub:"every Claude Code chat on this computer", archiveTab:n=>`Archive${n ? " · " + n : ""}`, doneCol:"Done", done:"Done", doneH:"Marked done by you or closed in coordinator", markDone:"✓ Done", reopen:"Reopen", toArchive:"Archive", restore:"Restore",
   moreBtn:"More", showMore:"Show more", showLess:"Show less", prioNone:"Priority", p3:"High", p2:"Medium", p1:"Low", compactOn:"Compact", compactOff:"Detailed",
-  archEmpty:"The archive is empty. Use More > Archive on a card to move it here.", archHint:"Archived cards. A card comes back by itself when its chat gets new activity.", foldersTab:"Folders", fEmpty:"No folders added yet. Press '+ Add folder' and pick the folder with your projects (for example the one you use in Cowork).",
-  fHint:"Folders you added by hand. Activity comes from file changes, so work done in Cowork or any editor shows up here too.",
+  archEmpty:"The archive is empty. Use More > Archive on a card to move it here.", archHint:"Archived cards. A card comes back by itself when its chat gets new activity.",
   lastChange:"last change", noChange:"no files yet", filesN:n=>`${n} files`, chatsN:n=>`${n} Claude Code chats`, recently:"Recently changed",
   newChat:"New chat", startChat:"Start", promptPh:"First message (optional)", mDefault:"Default model", copyPath:"Copy path", started:"Started in a new window",
   testRow:"Test workspace", testRowD:"Creates pult-testbed in your home folder with five small projects and starts five Claude Code chats in it (Opus and Sonnet). Uses your subscription.", testBtn:"Create and start 5 test chats", testDone:n=>`Started ${n} chats. The folder is on the board.`, repair:"Repair settings.json", repairD:"Your settings file has two JSON blocks one after the other. Pult merges them into one and keeps a backup.", setup:"Setup", setupTitle:"Coordinator rules", close:"Close", turnOn:"Turn on", turnOff:"Turn off", allOn:"Turn everything on",
@@ -165,7 +165,7 @@ const T = {
   sNote:"Each change saves a backup next to the file first. Restart open Claude Code windows after a change.", working:"Working…", outdated:"Pult was updated, but the old version is still running. Close the black Pult window and double-click START.bat again.", d90:"90 days", openFolder:"Open folder", goProject:"Show this project on the board", all:"All", from:"from", to:"to", trOff:"Translate cards: off", trOn:"Translate cards: on", trBusy:n=>`Translating… ${n} left`,
   trTip:"Claude translates titles, points and requests of all cards into the interface language (uses your subscription; each chat is translated once)",
   noFolder:"folder not on this computer", emptyProjects:n=>`${n} folders without chats in this period`, src:(p,f,r)=>`${p}: ${f} chat files, ${r} in the chosen period`, srcMissing:p=>`${p}: not found`, byStatus:"By status", byProject:"By project", today:"Today", d7:"7 days", d30:"30 days",
-  addFolder:"+ Add folder", planned:"Planned", plannedH:"Coordinator tasks nobody has started", running:"Running now", runningH:"The chat is working right now",
+  addFolder:"+ Add folder", backlog:"Backlog", backlogH:"Notes for the future, not started on purpose", click:"waits for your click", helper:"helper running", planned:"Planned", plannedH:"Coordinator tasks nobody has started", running:"Running now", runningH:"The chat is working right now",
   waiting:"Waiting for you", waitingH:"The chat ended with a question", review:"Done, check it", reviewH:"The chat answered and stopped",
   broken:"Interrupted", brokenH:"Stopped or closed in the middle of work", lastAnswer:"Last answer", aiSummary:"AI summary", report:"Chat report",
   goal:"Goal", lastAsk:"Your last request", ask1:"request", askN:"requests", files:"files changed: ", branch:"branch ", resume:"Continue chat",
@@ -177,8 +177,7 @@ const T = {
   down:"Pult does not answer. Is it still running?", askPath:"Paste the full path of the folder:", now:"just now", min:m=>`${m} min ago`, hr:h=>`${h} h ago`, day:d=>`${d} d ago`},
  de: {sub:"alle Claude-Code-Chats auf diesem Computer", archiveTab:n=>`Archiv${n ? " · " + n : ""}`, doneCol:"Erledigt", done:"Erledigt", doneH:"Von dir als erledigt markiert oder im Coordinator geschlossen", markDone:"✓ Erledigt", reopen:"Wieder öffnen", toArchive:"Archivieren", restore:"Wiederherstellen",
   moreBtn:"Mehr", showMore:"Mehr anzeigen", showLess:"Weniger anzeigen", prioNone:"Priorität", p3:"Hoch", p2:"Mittel", p1:"Niedrig", compactOn:"Kompakt", compactOff:"Ausführlich",
-  archEmpty:"Das Archiv ist leer. Mit Mehr > Archivieren verschiebst du eine Karte hierher.", archHint:"Archivierte Karten. Eine Karte kommt von selbst zurück, wenn ihr Chat neue Aktivität hat.", foldersTab:"Ordner", fEmpty:"Noch keine Ordner hinzugefügt. Drücke '+ Ordner hinzufügen' und wähle den Ordner mit deinen Projekten (zum Beispiel den, den du in Cowork nutzt).",
-  fHint:"Von Hand hinzugefügte Ordner. Aktivität kommt aus Dateiänderungen, daher erscheint auch Arbeit aus Cowork oder einem Editor.",
+  archEmpty:"Das Archiv ist leer. Mit Mehr > Archivieren verschiebst du eine Karte hierher.", archHint:"Archivierte Karten. Eine Karte kommt von selbst zurück, wenn ihr Chat neue Aktivität hat.",
   lastChange:"zuletzt geändert", noChange:"noch keine Dateien", filesN:n=>`${n} Dateien`, chatsN:n=>`${n} Claude-Code-Chats`, recently:"Zuletzt geändert",
   newChat:"Neuer Chat", startChat:"Starten", promptPh:"Erste Nachricht (optional)", mDefault:"Standardmodell", copyPath:"Pfad kopieren", started:"In neuem Fenster gestartet",
   testRow:"Testumgebung", testRowD:"Legt pult-testbed in deinem Benutzerordner mit fünf kleinen Projekten an und startet darin fünf Claude-Code-Chats (Opus und Sonnet). Verbraucht dein Abo-Kontingent.", testBtn:"Anlegen und 5 Test-Chats starten", testDone:n=>`${n} Chats gestartet. Der Ordner ist auf der Tafel.`, repair:"settings.json reparieren", repairD:"Deine Einstellungsdatei enthält zwei JSON-Blöcke hintereinander. Pult führt sie zusammen und legt eine Sicherung an.", setup:"Einrichtung", setupTitle:"Coordinator-Regeln", close:"Schließen", turnOn:"Einschalten", turnOff:"Ausschalten", allOn:"Alles einschalten",
@@ -191,7 +190,7 @@ const T = {
   sNote:"Vor jeder Änderung wird eine Sicherung neben der Datei angelegt. Starte offene Claude-Code-Fenster danach neu.", working:"Arbeite…", outdated:"Pult wurde aktualisiert, aber die alte Version läuft noch. Schließe das schwarze Pult-Fenster und starte START.bat erneut.", d90:"90 Tage", openFolder:"Ordner öffnen", goProject:"Dieses Projekt auf der Tafel zeigen", all:"Alle", from:"von", to:"bis", trOff:"Karten übersetzen: aus", trOn:"Karten übersetzen: an", trBusy:n=>`Übersetze… noch ${n}`,
   trTip:"Claude übersetzt Titel, Punkte und Anfragen aller Karten in die Sprache der Oberfläche (verbraucht dein Abo-Kontingent; jeder Chat wird einmal übersetzt)",
   noFolder:"Ordner nicht auf diesem Computer", emptyProjects:n=>`${n} Ordner ohne Chats in diesem Zeitraum`, src:(p,f,r)=>`${p}: ${f} Chat-Dateien, ${r} im gewählten Zeitraum`, srcMissing:p=>`${p}: nicht gefunden`, byStatus:"Nach Status", byProject:"Nach Projekt", today:"Heute", d7:"7 Tage", d30:"30 Tage",
-  addFolder:"+ Ordner hinzufügen", planned:"Geplant", plannedH:"Coordinator-Aufgaben, die niemand begonnen hat", running:"Läuft gerade", runningH:"Der Chat arbeitet gerade",
+  addFolder:"+ Ordner hinzufügen", backlog:"Backlog", backlogH:"Notizen für später, bewusst nicht begonnen", click:"wartet auf deinen Klick", helper:"Helfer läuft", planned:"Geplant", plannedH:"Coordinator-Aufgaben, die niemand begonnen hat", running:"Läuft gerade", runningH:"Der Chat arbeitet gerade",
   waiting:"Wartet auf dich", waitingH:"Der Chat endete mit einer Frage", review:"Fertig, bitte prüfen", reviewH:"Der Chat hat geantwortet und angehalten",
   broken:"Abgebrochen", brokenH:"Mitten in der Arbeit gestoppt oder geschlossen", lastAnswer:"Letzte Antwort", aiSummary:"KI-Zusammenfassung", report:"Bericht des Chats",
   goal:"Ziel", lastAsk:"Deine letzte Anfrage", ask1:"Anfrage", askN:"Anfragen", files:"geänderte Dateien: ", branch:"Branch ", resume:"Chat fortsetzen",
@@ -202,7 +201,7 @@ const T = {
   looked:"Gesucht in: ", stat:(p,c,w)=>`${p} Projekte · ${c} Chats · warten auf dich: ${w}`, title:w=>`${w} warten · Pult`, stopped:"Pult ist gestoppt. Starte START.bat erneut.",
   down:"Pult antwortet nicht. Läuft es noch?", askPath:"Füge den vollständigen Pfad des Ordners ein:", now:"gerade eben", min:m=>`vor ${m} Min.`, hr:h=>`vor ${h} Std.`, day:d=>`vor ${d} T.`},
 };
-const COLS = [["planned","var(--accent)"],["running","var(--run)"],["waiting","var(--wait)"],["review","var(--rev)"],["broken","var(--brk)"],["done","var(--mute)"]];
+const COLS = [["backlog","var(--mute)"],["planned","var(--accent)"],["running","var(--run)"],["waiting","var(--wait)"],["review","var(--rev)"],["broken","var(--brk)"],["done","var(--mute)"]];
 let data = null, view = "status", days = 7, range = null, autoTr = false, trBusy = false, trFailed = new Set(), hidden = new Set(), busy = {}, errors = {}, lang = "en";
 autoTr = true;
 try { autoTr = localStorage.getItem("pult-tr") !== "0"; } catch (e) {}
@@ -264,7 +263,9 @@ function card(s) {
   pl.title = t("goProject"); pl.onclick = () => goProject(p.root);
   if (s.priority) name.append(el("span", "prio p" + s.priority, t("p" + s.priority)));
   name.append(pl);
-  if (s.task) { const a = el("a", "tag", s.task + " · " + s.state); a.href = "http://localhost:8790/t/" + s.task; a.target = "_blank"; name.append(a); }
+  if (s.task) { const a = el("a", "tag", s.task + (s.word ? " · " + s.word : "") + " · " + s.state); a.href = "http://localhost:8790/t/" + s.task; a.target = "_blank"; name.append(a); }
+  if (s.click) name.append(el("span", "tag flag", t("click")));
+  else if (s.helpers) name.append(el("span", "tag", t("helper")));
   top.append(name, el("span", s.status === "running" ? "pulse" : "", ago(s.updated)));
   const tr = autoTr && s.tr && s.tr[lang] || null;
   const toggle = () => { open ? expanded.delete(s.id) : expanded.add(s.id); render(); };
@@ -274,7 +275,7 @@ function card(s) {
   let long = items.length > 3 || items.some(i => i.length > 110);
   if (items.length) {
     const box = el("div", s.ai ? "sumbox" : "plainbox");
-    box.append(el("div", "lab", s.ai ? t("aiSummary") : s.status === "planned" ? t("goal") : s.task && s.status !== "running" && s.status !== "broken" ? t("report") : t("lastAnswer")), list(items));
+    box.append(el("div", "lab", s.ai ? t("aiSummary") : s.status === "planned" || s.status === "backlog" ? t("goal") : s.task && s.status !== "running" && s.status !== "broken" ? t("report") : t("lastAnswer")), list(items));
     c.append(box);
   }
   if (s.last_prompt && s.last_prompt !== s.title) {
@@ -366,51 +367,6 @@ function column(title, tint, hint, items, p) {
   items.forEach(s => col.append(card(s)));
   return col;
 }
-function folderCard(p) {
-  const c = el("div", "card"); c.style.setProperty("--c", color(p));
-  const top = el("div", "top"), pl = el("button", "plink", p.name); pl.title = t("goProject"); pl.onclick = () => goProject(p.root);
-  const name = el("span", "proj"); name.append(pl);
-  top.append(name, el("span", "", p.last ? t("lastChange") + " " + ago(p.last) : t("noChange")));
-  c.append(top, el("div", "fpath", p.root));
-  if (p.brief) { const b = el("div", "sumbox"); b.append(el("div", "lab", t("overview")), list(p.brief)); c.append(b); }
-  if (p.recent.length) {
-    c.append(el("div", "lab", t("recently")));
-    const ul = el("ul", "flist"); p.recent.forEach(r => { const li = el("li"); li.append(el("span", "", r.path), el("span", "", ago(r.mtime))); ul.append(li); }); c.append(ul);
-  }
-  const chats = data ? data.sessions.filter(x => x.chat && x.root === p.root).length : 0;
-  c.append(el("div", "meta", t("filesN")(p.files) + " · " + t("chatsN")(chats)));
-  const acts = el("div", "acts");
-  if (data && data.has_claude) {
-    const a = el("button", "btn", busy[p.root + "b"] ? t("analyzing") : p.brief ? t("reanalyze") : t("analyze")); a.disabled = !!busy[p.root + "b"]; a.title = t("analyzeTip");
-    a.onclick = async () => { await act("/api/brief", p.root, "b"); loadFolders(); }; acts.append(a);
-  }
-  acts.append(openBtn(p.root, p.root));
-  const cp = el("button", "btn", t("copyPath")); cp.onclick = () => navigator.clipboard.writeText(p.root).then(() => { cp.textContent = t("copied"); }); acts.append(cp);
-  c.append(acts);
-  addNewChat(acts, p.root);
-  if (errors[p.root]) c.append(el("div", "err", errors[p.root]));
-  return c;
-}
-function renderFolders(board) {
-  board.className = "fview";
-  if (!fdata) { board.append(el("div", "empty", t("working"))); return; }
-  if (!fdata.groups.length) { board.append(el("div", "empty", t("fEmpty"))); return; }
-  board.append(el("div", "hint", t("fHint")));
-  fdata.groups.forEach(g => {
-    const sec = el("div", "fgroup"), hd = el("div", "fgh");
-    hd.append(el("h2", "", g.name), el("span", "", g.root));
-    const rm = el("button", "btn", t("remove")); rm.onclick = async () => { await act("/api/remove-folder", g.root, "x"); loadFolders(); }; hd.append(rm);
-    sec.append(hd);
-    const grid = el("div", "fgrid"); g.projects.forEach(p => grid.append(folderCard(p))); sec.append(grid);
-    if (errors[g.root]) sec.append(el("div", "err", errors[g.root]));
-    board.append(sec);
-  });
-}
-async function loadFolders() {
-  const r = await post("/api/folders", {});
-  if (r.ok) fdata = r; else errors.folders = r.error || t("outdated");
-  render();
-}
 function render() {
   document.documentElement.lang = lang;
   document.getElementById("sub").textContent = t("sub");
@@ -424,7 +380,7 @@ function render() {
   ban.hidden = !(OLD_SERVER || data && data.stale); ban.textContent = t("outdated");
   if (!data) return;
   const board = document.getElementById("board"), blank = document.getElementById("blank"), chips = document.getElementById("chips");
-  const all = data.sessions, none = !all.length && !data.projects.some(p => p.added) && view !== "folders" && view !== "archive";
+  const all = data.sessions, none = !all.length && !data.projects.some(p => p.added) && view !== "archive";
   blank.hidden = !none; board.hidden = chips.hidden = none;
   if (none) {
     blank.replaceChildren(el("p", "", data.found ? t("noChats") : t("noHist")), el("p", "", t("looked") + data.source));
@@ -451,8 +407,7 @@ function render() {
     board.append(el("div", "hint", arch.length ? t("archHint") : t("archEmpty")));
     const grid = el("div", "fgrid"); arch.forEach(s => grid.append(card(s))); board.append(grid);
   }
-  else if (view === "folders") renderFolders(board);
-  else if (view === "status") COLS.forEach(([k, tint]) => { if ((k !== "planned" && k !== "done") || n(k)) board.append(column(t(k), tint, t(k + "H"), shown.filter(s => s.status === k))); });
+  else if (view === "status") COLS.forEach(([k, tint]) => { if ((k !== "planned" && k !== "done" && k !== "backlog") || n(k)) board.append(column(t(k), tint, t(k + "H"), shown.filter(s => s.status === k))); });
   else busyP.concat(idle).forEach(p => { if (!hidden.has(p.root)) board.append(column(p.name, color(p), p.root, shown.filter(s => s.root === p.root), p)); });
   const w = n("waiting") + n("review");
   document.getElementById("stat").textContent = t("stat")(busyP.length, shown.filter(s => s.chat).length, w);
@@ -493,7 +448,7 @@ function seg(id, attr, set) {
     set(b.dataset[attr]);
   };
 }
-seg("view", "v", v => { view = v; if (v === "folders") loadFolders(); render(); });
+seg("view", "v", v => { view = v; render(); });
 seg("days", "d", d => { days = +d; range = null; document.getElementById("from").value = document.getElementById("to").value = ""; load(); });
 function dates() {
   const f = document.getElementById("from").value, to = document.getElementById("to").value;
@@ -508,7 +463,6 @@ document.getElementById("add").onclick = async () => {
   let r = await post("/api/add-folder", {});
   if (r.need_path) { const path = prompt(t("askPath")); if (!path) return; r = await post("/api/add-folder", {path}); }
   if (!r.ok && r.error) alert(r.error);
-  if (view === "folders") loadFolders();
   if (r.root) { view = "project"; document.querySelectorAll("#view button").forEach(b => b.classList.toggle("on", b.dataset.v === "project")); }
   load();
 };
@@ -591,7 +545,7 @@ document.getElementById("zoom").onclick = e => {
 };
 document.addEventListener("click", e => { if (menuOpen && !e.target.closest(".menu")) { menuOpen = null; render(); } });
 document.getElementById("setupClose").onclick = () => document.getElementById("setup").close();
-render(); load(); setInterval(() => { if (!Object.keys(busy).length && !trBusy && !ncOpen && !menuOpen) { load(); if (view === "folders") loadFolders(); } }, 10000);
+render(); load(); setInterval(() => { if (!Object.keys(busy).length && !trBusy && !ncOpen && !menuOpen) { load(); } }, 10000);
 </script>
 </body>
 </html>

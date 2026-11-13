@@ -21,12 +21,17 @@ Running `START.bat` again replaces an older running version of Pult.
 
 ### Board
 - **Every Claude Code chat on this computer**, read from
-  `%USERPROFILE%\.claude\projects`, including old chats.
-- **Three views:** *By status*, *By project* (one column per folder) and
-  *Folders* (folders you added by hand).
+  `%USERPROFILE%\.claude\projects`, including old chats: the terminal, the
+  VS Code extension and the Code tab of the Claude desktop app. Cowork
+  sessions are not shown.
+- **Two views:** *By status* and *By project* (one column per folder), plus
+  the *Archive*.
 - **Status worked out automatically:** Running now, Waiting for you,
-  Done - check it, Interrupted. With coordinator: the exact task state and a
-  Planned column for tasks nobody has started.
+  Done - check it, Interrupted. With coordinator: the exact task state, a
+  Planned column for tasks nobody has started and a Backlog column for notes
+  for the future. A card also shows the chat-name word of its task, "waits for
+  your click" (Claude Code stopped on a permission question) and "helper
+  running" (a background helper works while the chat itself is quiet).
 - **Card per chat:** project in its own colour, title, 3-4 points from the last
   answer, your last request, files changed, git branch, coordinator task id.
 - **Period:** Today / 7 / 30 / 90 days / All, or any from-to dates.
@@ -47,14 +52,13 @@ Running `START.bat` again replaces an older running version of Pult.
   (`claude --resume`).
 - **New chat:** starts Claude Code in a project folder with a first message
   and a model (Opus / Sonnet / Haiku).
-- **Open folder** and **Copy path** (for Cowork or any other tool).
+- **Open folder** and **Copy path**.
 - **Command:** copies the terminal command for a chat.
 
-### Folders (for Cowork and any other tool)
+### Folders
 - **+ Add folder:** the folder works as a workspace; each subfolder is a
-  project, and chats deeper inside are grouped under it.
-- **Folders tab:** a card per project with recently changed files. Activity
-  comes from file changes, so work done in Cowork or an editor shows up too.
+  project (a column in *By project*), and chats deeper inside are grouped
+  under it. Added folders are also the ones Setup can register in coordinator.
 
 ### AI on demand (uses your Claude subscription via `claude -p`)
 - **Summarise with AI:** the last answer of a chat in 2-4 points, ending with
@@ -72,7 +76,10 @@ Running `START.bat` again replaces an older running version of Pult.
 ### Setup: coordinator rules in one click
 The **Setup** button switches on and off:
 - **Hooks in Claude Code:** every chat in a registered folder gets the rules at
-  start and must report when it stops.
+  start and must report when it stops. Pult writes the same hook list as
+  `python -m coordinator install-help` (it reads it from the coordinator next
+  to it), including the lease heartbeat, the permission-click mark and the
+  helper counters. After a coordinator update switch Hooks off and on once.
 - **Coordinator tools for chats** (MCP): chats create, take and report tasks.
 - **Chats create their own tasks:** a short rule in your global `CLAUDE.md`.
 - **Where the rules apply:** registers a board folder in coordinator.
@@ -98,10 +105,9 @@ five Claude Code chats on Opus and Sonnet. See [TESTING.md](TESTING.md).
 ## Not there yet
 
 - Normal chats in the Claude app and ChatGPT: their history is not on this
-  computer. Cowork sessions: only through the Folders tab (file activity).
+  computer. Cowork sessions are left out on purpose.
 - Without coordinator, the status is a guess from the last message.
 - The card does not show which model ran a chat.
-- Opening a Cowork session from Pult.
 
 ## Files
 
