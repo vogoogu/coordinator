@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pult</title>
+<style>
+:root{
+  --bg:#f3f1ec; --panel:#ebe8e1; --card:#fff; --ink:#1c2430; --mute:#6a7482; --line:#dcd8cf;
+  --accent:#0f5b57; --run:#1f6fd0; --wait:#b96a00; --rev:#2e7d4f; --brk:#8a8f98;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#12161c; --panel:#181d25; --card:#1f2630; --ink:#e8ecf1; --mute:#93a0b0; --line:#2c3541;
+    --accent:#5fc7bf; --run:#6aa9f5; --wait:#f0a94a; --rev:#6fcf97; --brk:#8b95a3; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
+header{position:relative;display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center;padding:14px 112px 14px 20px;border-bottom:1px solid var(--line)}
+#lang{position:absolute;top:14px;right:20px}
+#lang button{width:38px}
+h1{font-size:19px;margin:0;letter-spacing:.02em}
+h1 small{font-weight:400;color:var(--mute);font-size:13px;margin-left:8px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--mute);padding:6px 12px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--ink);color:var(--bg)}
+.spacer{flex:1}
+.stat{color:var(--mute);font-size:13px}
+#chips{display:flex;flex-wrap:wrap;gap:6px;padding:10px 20px 0}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:3px 10px 3px 8px;font:inherit;font-size:13px;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.chip.off{opacity:.4}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+#board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(300px,420px);gap:14px;padding:14px 20px 28px;overflow-x:auto;align-items:start}
+#board.fview{display:block;overflow:visible}
+.fgroup{margin-bottom:22px}
+.fgh{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin:0 0 10px}
+.fgh h2{font-size:15px;margin:0}
+.fgh span{color:var(--mute);font-size:12.5px;overflow-wrap:anywhere}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+.fpath{font-size:12px;color:var(--mute);overflow-wrap:anywhere;margin:-4px 0 6px}
+.flist{list-style:none;margin:0 0 6px;padding:0;font-size:12.5px}
+.flist li{display:flex;justify-content:space-between;gap:10px;padding:2px 0;border-bottom:1px dotted var(--line)}
+.flist li span:first-child{overflow-wrap:anywhere}
+.flist li span:last-child{color:var(--mute);flex:none}
+.ncf{margin-top:8px;display:grid;gap:6px}
+.ncf textarea,.ncf select{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;width:100%}
+.ncf textarea{min-height:64px;resize:vertical}
+.ncf .row{display:flex;gap:6px}
+.ncf .row select{flex:1}
+.col{background:var(--panel);border-radius:12px;padding:10px;min-height:120px}
+.col h2{font-size:13px;margin:2px 4px 10px;display:flex;align-items:center;gap:8px;text-transform:uppercase;letter-spacing:.06em}
+.col h2 b{font-weight:600;color:var(--mute)}
+.col .hint{color:var(--mute);font-size:12px;margin:-6px 4px 10px;text-transform:none;letter-spacing:0}
+.card{background:var(--card);border-radius:10px;padding:11px 12px 10px;margin-bottom:9px;border-left:4px solid var(--c);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.top{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:var(--mute);margin-bottom:4px}
+.proj{color:var(--c);font-weight:600;overflow-wrap:anywhere}
+.title{font-weight:600;margin-bottom:6px;overflow-wrap:anywhere}
+.card ul{margin:0 0 6px;padding-left:17px}
+.card li{margin-bottom:2px;overflow-wrap:anywhere}
+.lab{font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;margin:6px 0 2px}
+.ask{color:var(--mute);font-size:13px;overflow-wrap:anywhere}
+.meta{font-size:12px;color:var(--mute);margin-top:6px}
+.acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.btn{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:4px 9px;font:inherit;font-size:12.5px;cursor:pointer}
+.btn.main{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+.btn:disabled{opacity:.5;cursor:default}
+.err{color:#c0392b;font-size:12px;margin-top:6px}
+.empty{color:var(--mute);padding:8px 4px;font-size:13px}
+#blank{max-width:560px;margin:60px auto;padding:0 20px;color:var(--mute)}
+#blank b{color:var(--ink)}
+.brief{background:var(--card);border-radius:10px;padding:9px 12px;margin-bottom:9px;border:1px dashed var(--line)}
+.brief ul{margin:0;padding-left:17px}
+.tag{display:inline-block;border:1px solid var(--line);border-radius:5px;padding:0 5px;font-size:11.5px;color:var(--mute);margin-left:6px;text-decoration:none}
+.colacts{display:flex;flex-wrap:wrap;gap:6px;margin:0 4px 10px}
+.dates{display:inline-flex;align-items:center;gap:6px;color:var(--mute);font-size:13px}
+.dates input{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color-scheme:light dark}
+.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.col.small{opacity:.75}
+footer{padding:0 20px 24px;color:var(--mute);font-size:12px;overflow-wrap:anywhere}
+.card .title{font-size:15px;font-weight:700;line-height:1.3;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+.sumbox{background:color-mix(in srgb,var(--accent) 10%,var(--card));border:1px solid color-mix(in srgb,var(--accent) 28%,var(--card));border-radius:8px;padding:8px 11px 7px;margin:2px 0 8px}
+.sumbox .lab{color:var(--accent);margin:0 0 3px;font-weight:700}
+.sumbox .lab::before{content:"\2726\00a0"}
+.plainbox{padding:0 2px;margin-bottom:6px}
+.plainbox .lab{margin-top:0}
+.plink{border:0;background:none;padding:0;font:inherit;color:var(--c);font-weight:700;cursor:pointer;text-align:left;overflow-wrap:anywhere}
+.plink:hover{text-decoration:underline}
+.col.flash{outline:3px solid var(--accent);outline-offset:2px;transition:outline-color .6s}
+#banner{background:#f6c344;color:#1c2430;padding:10px 20px;font-weight:600}
+dialog#setup{border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--ink);padding:0;width:min(640px,calc(100vw - 32px));max-height:calc(100vh - 40px)}
+dialog#setup::backdrop{background:rgba(0,0,0,.45)}
+.sh{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)}
+.sh h2{margin:0;font-size:17px}
+.sb{padding:12px 18px 18px}
+.srow{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.srow .ic{font-size:16px;width:20px;flex:none;text-align:center;margin-top:1px}
+.srow .tx{flex:1;min-width:0}
+.srow .tx b{display:block;margin-bottom:2px}
+.srow .tx span{color:var(--mute);font-size:13px;overflow-wrap:anywhere}
+.ok{color:var(--rev)} .no{color:var(--mute)}
+.snote{color:var(--mute);font-size:12.5px;margin-top:12px}
+.slist{margin:4px 0 0;padding-left:18px;font-size:13px;color:var(--mute)}
+.card.clamp .plainbox li,.card.clamp .sumbox li{max-height:2.9em;overflow:hidden}
+.card.clamp .plainbox li:nth-child(n+4),.card.clamp .sumbox li:nth-child(n+4){display:none}
+.card.clamp .ask{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+body.compact .card .plainbox,body.compact .card .sumbox,body.compact .card .ask,body.compact .card .lab,body.compact .card .meta{display:none}
+body.compact .card.open .plainbox,body.compact .card.open .sumbox,body.compact .card.open .ask,body.compact .card.open .lab,body.compact .card.open .meta{display:block}
+body.compact .card .title{border-bottom:0;padding-bottom:0;margin-bottom:4px;font-size:14px}
+.card .title{cursor:pointer}
+.more{border:0;background:none;color:var(--mute);font:inherit;font-size:12px;padding:0;cursor:pointer;margin-bottom:4px}
+.more:hover{color:var(--ink)}
+.prio{font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:4px;padding:1px 6px;margin-right:6px;text-transform:uppercase}
+.prio.p3{background:#d6453d;color:#fff}.prio.p2{background:#e0a030;color:#1c2430}.prio.p1{background:var(--line);color:var(--ink)}
+.card.isdone{opacity:.72}
+.card.isdone .title{text-decoration:line-through;text-decoration-color:var(--mute)}
+.acts select{font:inherit;font-size:12.5px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:7px;padding:3px 4px;color-scheme:light dark}
+.menu{position:relative}
+.menu summary{list-style:none;cursor:pointer}
+.menu summary::-webkit-details-marker{display:none}
+.menu .pop{position:absolute;z-index:5;top:calc(100% + 4px);left:0;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px;box-shadow:0 6px 18px rgba(0,0,0,.18);display:grid;gap:2px}
+.menu .pop button{border:0;background:none;color:var(--ink);font:inherit;font-size:13px;text-align:left;padding:6px 8px;border-radius:6px;cursor:pointer}
+.menu .pop button:hover{background:var(--panel)}
+.menu .pop button:disabled{opacity:.5;cursor:default}
+.tools{display:inline-flex;gap:6px;align-items:center}
+.pulse{animation:p 1.4s ease-in-out infinite}
+@keyframes p{50%{opacity:.35}}
+</style>
+</head>
+<body>
+<div id="banner" hidden></div>
+<header>
+  <h1>Pult <small id="sub"></small></h1>
+  <div class="seg" id="view"><button data-v="status" class="on" data-t="byStatus"></button><button data-v="project" data-t="byProject"></button><button data-v="folders" data-t="foldersTab"></button><button data-v="archive" id="archTab"></button></div>
+  <div class="seg" id="days"><button data-d="1" data-t="today"></button><button data-d="7" class="on" data-t="d7"></button><button data-d="30" data-t="d30"></button><button data-d="90" data-t="d90"></button><button data-d="3650" data-t="all"></button></div>
+  <span class="dates"><span data-t="from"></span><input type="date" id="from"><span data-t="to"></span><input type="date" id="to"></span>
+  <button class="btn" id="add" data-t="addFolder"></button>
+  <button class="btn" id="tr"></button>
+  <button class="btn" id="setupBtn" data-t="setup"></button>
+  <span class="tools"><button class="btn" id="dens"></button><span class="seg" id="zoom"><button data-z="-1">A−</button><button data-z="0" id="zval"></button><button data-z="1">A+</button></span></span>
+  <span class="spacer"></span>
+  <span class="stat" id="stat"></span>
+  <div class="seg" id="lang"><button data-l="en">EN</button><button data-l="de">DE</button></div>
+</header>
+<div id="chips"></div>
+<div id="board"></div>
+<div id="blank" hidden></div>
+<footer id="foot"></footer>
+<dialog id="setup"><div class="sh"><h2 data-t="setupTitle"></h2><button class="btn" id="setupClose" data-t="close"></button></div><div class="sb" id="setupBody"></div></dialog>
+<script>
+const TOKEN = "__TOKEN__", VERSION = "__VERSION__";
+const OLD_SERVER = VERSION === "__" + "VERSION__";
+const T = {
+ en: {sub:"every Claude Code chat on this computer", archiveTab:n=>`Archive${n ? " · " + n : ""}`, doneCol:"Done", done:"Done", doneH:"Marked done by you or closed in coordinator", markDone:"✓ Done", reopen:"Reopen", toArchive:"Archive", restore:"Restore",
+  moreBtn:"More", showMore:"Show more", showLess:"Show less", prioNone:"Priority", p3:"High", p2:"Medium", p1:"Low", compactOn:"Compact", compactOff:"Detailed",
+  archEmpty:"The archive is empty. Use More > Archive on a card to move it here.", archHint:"Archived cards. A card comes back by itself when its chat gets new activity.", foldersTab:"Folders", fEmpty:"No folders added yet. Press '+ Add folder' and pick the folder with your projects (for example the one you use in Cowork).",
+  fHint:"Folders you added by hand. Activity comes from file changes, so work done in Cowork or any editor shows up here too.",
+  lastChange:"last change", noChange:"no files yet", filesN:n=>`${n} files`, chatsN:n=>`${n} Claude Code chats`, recently:"Recently changed",
+  newChat:"New chat", startChat:"Start", promptPh:"First message (optional)", mDefault:"Default model", copyPath:"Copy path", started:"Started in a new window",
+  testRow:"Test workspace", testRowD:"Creates pult-testbed in your home folder with five small projects and starts five Claude Code chats in it (Opus and Sonnet). Uses your subscription.", testBtn:"Create and start 5 test chats", testDone:n=>`Started ${n} chats. The folder is on the board.`, repair:"Repair settings.json", repairD:"Your settings file has two JSON blocks one after the other. Pult merges them into one and keeps a backup.", setup:"Setup", setupTitle:"Coordinator rules", close:"Close", turnOn:"Turn on", turnOff:"Turn off", allOn:"Turn everything on",
+  sHooks:"Hooks in Claude Code", sHooksD:"Every chat in a registered folder gets the rules at start and must report when it stops.",
+  sMcp:"Coordinator tools for chats", sMcpD:"Lets chats create, take and report tasks.",
+  sRule:"Chats create their own tasks", sRuleD:"A short rule in your global CLAUDE.md: before changing files, create a task and take it; report at the end.",
+  sFolders:"Where the rules apply", sFoldersD:"Only in folders registered in coordinator (and their subfolders).", apply:"Apply rules here", covered:"rules apply", notCovered:"no rules yet",
+  noneAdded:"Add a folder on the board first (+ Add folder).", registered:"Registered: ",
+  repoMissing:"The coordinator folder was not found next to Pult, so hooks and tools cannot be set up.",
+  sNote:"Each change saves a backup next to the file first. Restart open Claude Code windows after a change.", working:"Working…", outdated:"Pult was updated, but the old version is still running. Close the black Pult window and double-click START.bat again.", d90:"90 days", openFolder:"Open folder", goProject:"Show this project on the board", all:"All", from:"from", to:"to", trOff:"Translate cards: off", trOn:"Translate cards: on", trBusy:n=>`Translating… ${n} left`,
+  trTip:"Claude translates titles, points and requests of all cards into the interface language (uses your subscription; each chat is translated once)",
+  noFolder:"folder not on this computer", emptyProjects:n=>`${n} folders without chats in this period`, src:(p,f,r)=>`${p}: ${f} chat files, ${r} in the chosen period`, srcMissing:p=>`${p}: not found`, byStatus:"By status", byProject:"By project", today:"Today", d7:"7 days", d30:"30 days",
+  addFolder:"+ Add folder", planned:"Planned", plannedH:"Coordinator tasks nobody has started", running:"Running now", runningH:"The chat is working right now",
+  waiting:"Waiting for you", waitingH:"The chat ended with a question", review:"Done, check it", reviewH:"The chat answered and stopped",
+  broken:"Interrupted", brokenH:"Stopped or closed in the middle of work", lastAnswer:"Last answer", aiSummary:"AI summary", report:"Chat report",
+  goal:"Goal", lastAsk:"Your last request", ask1:"request", askN:"requests", files:"files changed: ", branch:"branch ", resume:"Continue chat",
+  cmd:"Command", cmdTip:"Copy the terminal command", copied:"Copied", sum:"Summarise with AI", sumBusy:"Summarising…",
+  sumTip:"Ask Claude to condense the last answer into 2-4 points (uses your subscription)", empty:"Empty", analyze:"Analyse with AI", reanalyze:"Refresh overview",
+  analyzing:"Analysing…", analyzeTip:"Claude reads the folder listing and recent chats and writes what is open (uses your subscription)", overview:"Project overview",
+  remove:"Remove folder", noChats:"No Claude Code chats in the chosen period. Pick a longer period or add a folder.", noHist:"Claude Code history was not found.",
+  looked:"Looked here: ", stat:(p,c,w)=>`${p} projects · ${c} chats · waiting for you: ${w}`, title:w=>`${w} waiting · Pult`, stopped:"Pult is stopped. Run START.bat again.",
+  down:"Pult does not answer. Is it still running?", askPath:"Paste the full path of the folder:", now:"just now", min:m=>`${m} min ago`, hr:h=>`${h} h ago`, day:d=>`${d} d ago`},
+ de: {sub:"alle Claude-Code-Chats auf diesem Computer", archiveTab:n=>`Archiv${n ? " · " + n : ""}`, doneCol:"Erledigt", done:"Erledigt", doneH:"Von dir als erledigt markiert oder im Coordinator geschlossen", markDone:"✓ Erledigt", reopen:"Wieder öffnen", toArchive:"Archivieren", restore:"Wiederherstellen",
+  moreBtn:"Mehr", showMore:"Mehr anzeigen", showLess:"Weniger anzeigen", prioNone:"Priorität", p3:"Hoch", p2:"Mittel", p1:"Niedrig", compactOn:"Kompakt", compactOff:"Ausführlich",
+  archEmpty:"Das Archiv ist leer. Mit Mehr > Archivieren verschiebst du eine Karte hierher.", archHint:"Archivierte Karten. Eine Karte kommt von selbst zurück, wenn ihr Chat neue Aktivität hat.", foldersTab:"Ordner", fEmpty:"Noch keine Ordner hinzugefügt. Drücke '+ Ordner hinzufügen' und wähle den Ordner mit deinen Projekten (zum Beispiel den, den du in Cowork nutzt).",
+  fHint:"Von Hand hinzugefügte Ordner. Aktivität kommt aus Dateiänderungen, daher erscheint auch Arbeit aus Cowork oder einem Editor.",
+  lastChange:"zuletzt geändert", noChange:"noch keine Dateien", filesN:n=>`${n} Dateien`, chatsN:n=>`${n} Claude-Code-Chats`, recently:"Zuletzt geändert",
+  newChat:"Neuer Chat", startChat:"Starten", promptPh:"Erste Nachricht (optional)", mDefault:"Standardmodell", copyPath:"Pfad kopieren", started:"In neuem Fenster gestartet",
+  testRow:"Testumgebung", testRowD:"Legt pult-testbed in deinem Benutzerordner mit fünf kleinen Projekten an und startet darin fünf Claude-Code-Chats (Opus und Sonnet). Verbraucht dein Abo-Kontingent.", testBtn:"Anlegen und 5 Test-Chats starten", testDone:n=>`${n} Chats gestartet. Der Ordner ist auf der Tafel.`, repair:"settings.json reparieren", repairD:"Deine Einstellungsdatei enthält zwei JSON-Blöcke hintereinander. Pult führt sie zusammen und legt eine Sicherung an.", setup:"Einrichtung", setupTitle:"Coordinator-Regeln", close:"Schließen", turnOn:"Einschalten", turnOff:"Ausschalten", allOn:"Alles einschalten",
+  sHooks:"Hooks in Claude Code", sHooksD:"Jeder Chat in einem registrierten Ordner bekommt die Regeln beim Start und muss beim Beenden berichten.",
+  sMcp:"Coordinator-Werkzeuge für Chats", sMcpD:"Damit können Chats Aufgaben anlegen, übernehmen und berichten.",
+  sRule:"Chats legen ihre Aufgaben selbst an", sRuleD:"Eine kurze Regel in deiner globalen CLAUDE.md: vor Änderungen eine Aufgabe anlegen und übernehmen, am Ende berichten.",
+  sFolders:"Wo die Regeln gelten", sFoldersD:"Nur in Ordnern, die im Coordinator registriert sind (und deren Unterordnern).", apply:"Regeln hier anwenden", covered:"Regeln aktiv", notCovered:"noch keine Regeln",
+  noneAdded:"Füge zuerst auf der Tafel einen Ordner hinzu (+ Ordner hinzufügen).", registered:"Registriert: ",
+  repoMissing:"Der Coordinator-Ordner wurde neben Pult nicht gefunden, daher können Hooks und Werkzeuge nicht eingerichtet werden.",
+  sNote:"Vor jeder Änderung wird eine Sicherung neben der Datei angelegt. Starte offene Claude-Code-Fenster danach neu.", working:"Arbeite…", outdated:"Pult wurde aktualisiert, aber die alte Version läuft noch. Schließe das schwarze Pult-Fenster und starte START.bat erneut.", d90:"90 Tage", openFolder:"Ordner öffnen", goProject:"Dieses Projekt auf der Tafel zeigen", all:"Alle", from:"von", to:"bis", trOff:"Karten übersetzen: aus", trOn:"Karten übersetzen: an", trBusy:n=>`Übersetze… noch ${n}`,
+  trTip:"Claude übersetzt Titel, Punkte und Anfragen aller Karten in die Sprache der Oberfläche (verbraucht dein Abo-Kontingent; jeder Chat wird einmal übersetzt)",
+  noFolder:"Ordner nicht auf diesem Computer", emptyProjects:n=>`${n} Ordner ohne Chats in diesem Zeitraum`, src:(p,f,r)=>`${p}: ${f} Chat-Dateien, ${r} im gewählten Zeitraum`, srcMissing:p=>`${p}: nicht gefunden`, byStatus:"Nach Status", byProject:"Nach Projekt", today:"Heute", d7:"7 Tage", d30:"30 Tage",
+  addFolder:"+ Ordner hinzufügen", planned:"Geplant", plannedH:"Coordinator-Aufgaben, die niemand begonnen hat", running:"Läuft gerade", runningH:"Der Chat arbeitet gerade",
+  waiting:"Wartet auf dich", waitingH:"Der Chat endete mit einer Frage", review:"Fertig, bitte prüfen", reviewH:"Der Chat hat geantwortet und angehalten",
+  broken:"Abgebrochen", brokenH:"Mitten in der Arbeit gestoppt oder geschlossen", lastAnswer:"Letzte Antwort", aiSummary:"KI-Zusammenfassung", report:"Bericht des Chats",
+  goal:"Ziel", lastAsk:"Deine letzte Anfrage", ask1:"Anfrage", askN:"Anfragen", files:"geänderte Dateien: ", branch:"Branch ", resume:"Chat fortsetzen",
+  cmd:"Befehl", cmdTip:"Terminal-Befehl kopieren", copied:"Kopiert", sum:"Mit KI zusammenfassen", sumBusy:"Fasse zusammen…",
+  sumTip:"Claude fasst die letzte Antwort in 2-4 Punkten zusammen (verbraucht dein Abo-Kontingent)", empty:"Leer", analyze:"Mit KI analysieren", reanalyze:"Überblick aktualisieren",
+  analyzing:"Analysiere…", analyzeTip:"Claude liest die Ordnerliste und die letzten Chats und schreibt, was offen ist (verbraucht dein Abo-Kontingent)", overview:"Projektüberblick",
+  remove:"Ordner entfernen", noChats:"Keine Claude-Code-Chats im gewählten Zeitraum. Wähle einen längeren Zeitraum oder füge einen Ordner hinzu.", noHist:"Der Claude-Code-Verlauf wurde nicht gefunden.",
+  looked:"Gesucht in: ", stat:(p,c,w)=>`${p} Projekte · ${c} Chats · warten auf dich: ${w}`, title:w=>`${w} warten · Pult`, stopped:"Pult ist gestoppt. Starte START.bat erneut.",
+  down:"Pult antwortet nicht. Läuft es noch?", askPath:"Füge den vollständigen Pfad des Ordners ein:", now:"gerade eben", min:m=>`vor ${m} Min.`, hr:h=>`vor ${h} Std.`, day:d=>`vor ${d} T.`},
+};
+const COLS = [["planned","var(--accent)"],["running","var(--run)"],["waiting","var(--wait)"],["review","var(--rev)"],["broken","var(--brk)"],["done","var(--mute)"]];
+let data = null, view = "status", days = 7, range = null, autoTr = false, trBusy = false, trFailed = new Set(), hidden = new Set(), busy = {}, errors = {}, lang = "en";
+autoTr = true;
+try { autoTr = localStorage.getItem("pult-tr") !== "0"; } catch (e) {}
+try { lang = localStorage.getItem("pult-lang") || ((navigator.language || "").startsWith("de") ? "de" : "en"); } catch (e) {}
+if (!T[lang]) lang = "en";
+const t = k => T[lang][k];
+
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const color = p => `hsl(${p.hue} 55% 45%)`;
+const proj = root => data.projects.find(p => p.root === root) || {name: root, hue: 0, root};
+function ago(ts) {
+  const m = Math.max(0, Math.round((data.now - ts) / 60));
+  if (m < 1) return t("now");
+  if (m < 60) return t("min")(m);
+  if (m < 1440) return t("hr")(Math.round(m / 60));
+  return t("day")(Math.round(m / 1440));
+}
+async function post(path, body) {
+  try {
+    const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({token: TOKEN, lang, ...body})});
+    return await r.json();
+  } catch (e) { return {ok: false, error: t("down")}; }
+}
+async function act(path, id, key, errKey = id) {
+  busy[id + key] = true; delete errors[errKey]; render();
+  const r = await post(path, {id});
+  delete busy[id + key];
+  if (!r.ok) errors[errKey] = r.error || t("outdated");
+  await load(true);
+}
+function openBtn(path, errKey) {
+  const b = el("button", "btn", t("openFolder")); b.title = path;
+  b.onclick = () => act("/api/open-folder", path, "o", errKey);
+  return b;
+}
+function goProject(root) {
+  view = "project"; ncOpen = ncOpen === root ? ncOpen : null; hidden.delete(root);
+  document.querySelectorAll("#view button").forEach(b => b.classList.toggle("on", b.dataset.v === "project"));
+  render();
+  const col = [...document.querySelectorAll(".col")].find(c => c.dataset.root === root);
+  if (!col) return;
+  col.scrollIntoView({behavior: "smooth", inline: "center", block: "nearest"});
+  col.classList.add("flash"); setTimeout(() => col.classList.remove("flash"), 1800);
+}
+function list(items) { const ul = el("ul"); items.forEach(i => ul.append(el("li", "", i))); return ul; }
+let expanded = new Set(), menuOpen = null, compact = false, zoomLevel = 0;
+try { compact = localStorage.getItem("pult-compact") === "1"; zoomLevel = +localStorage.getItem("pult-zoom") || 0; } catch (e) {}
+async function mark(s, change) {
+  Object.assign(s, change.priority !== undefined ? {priority: change.priority} : {});
+  menuOpen = null;
+  const r = await post("/api/card", {id: s.id, at: s.updated, ...change});
+  if (!r.ok) errors[s.id] = r.error || t("outdated");
+  await load(true);
+}
+function card(s) {
+  const p = proj(s.root), open = expanded.has(s.id), isDone = s.status === "done";
+  const c = el("div", "card" + (open ? " open" : " clamp") + (isDone ? " isdone" : "")); c.style.setProperty("--c", color(p));
+  const top = el("div", "top"), name = el("span", "proj"), pl = el("button", "plink", p.name);
+  pl.title = t("goProject"); pl.onclick = () => goProject(p.root);
+  if (s.priority) name.append(el("span", "prio p" + s.priority, t("p" + s.priority)));
+  name.append(pl);
+  if (s.task) { const a = el("a", "tag", s.task + " · " + s.state); a.href = "http://localhost:8790/t/" + s.task; a.target = "_blank"; name.append(a); }
+  top.append(name, el("span", s.status === "running" ? "pulse" : "", ago(s.updated)));
+  const tr = autoTr && s.tr && s.tr[lang] || null;
+  const toggle = () => { open ? expanded.delete(s.id) : expanded.add(s.id); render(); };
+  const title = el("div", "title", tr && tr.title || s.title); title.onclick = toggle;
+  c.append(top, title);
+  const items = tr && tr.bullets.length ? tr.bullets : s.ai || s.bullets;
+  let long = items.length > 3 || items.some(i => i.length > 110);
+  if (items.length) {
+    const box = el("div", s.ai ? "sumbox" : "plainbox");
+    box.append(el("div", "lab", s.ai ? t("aiSummary") : s.status === "planned" ? t("goal") : s.task && s.status !== "running" && s.status !== "broken" ? t("report") : t("lastAnswer")), list(items));
+    c.append(box);
+  }
+  if (s.last_prompt && s.last_prompt !== s.title) {
+    const ask = tr && tr.last_prompt || s.last_prompt; long = long || ask.length > 110;
+    c.append(el("div", "lab", t("lastAsk")), el("div", "ask", ask));
+  }
+  if (long || compact) { const m = el("button", "more", open ? t("showLess") : t("showMore")); m.onclick = toggle; c.append(m); }
+  if (s.chat) {
+    const meta = [s.turns + " " + (s.turns === 1 ? t("ask1") : t("askN"))];
+    if (s.files) meta.push(t("files") + s.files);
+    if (s.branch) meta.push(t("branch") + s.branch);
+    c.append(el("div", "meta", meta.join(" · ")));
+  }
+  const acts = el("div", "acts");
+  if (s.archived) {
+    const rs = el("button", "btn main", t("restore")); rs.onclick = () => mark(s, {archived: false}); acts.append(rs);
+  } else {
+    if (s.chat) {
+      const go = el("button", "btn main", t("resume")); go.disabled = !!busy[s.id + "r"] || !s.resumable;
+      if (!s.resumable) go.title = t("noFolder");
+      go.onclick = () => act("/api/resume", s.id, "r"); acts.append(go);
+    }
+    if (s.marked_done) { const ro = el("button", "btn", t("reopen")); ro.onclick = () => mark(s, {done: false}); acts.append(ro); }
+    else if (!isDone) { const dn = el("button", "btn", t("markDone")); dn.onclick = () => mark(s, {done: true}); acts.append(dn); }
+    const sel = el("select"); sel.title = t("prioNone");
+    [[0, t("prioNone")], [3, t("p3")], [2, t("p2")], [1, t("p1")]].forEach(([v, l]) => { const o = el("option", "", l); o.value = v; sel.append(o); });
+    sel.value = s.priority || 0; sel.onchange = () => mark(s, {priority: +sel.value}); acts.append(sel);
+    const menu = el("details", "menu"), sm = el("summary", "btn", t("moreBtn") + " ▾"), pop = el("div", "pop");
+    menu.open = menuOpen === s.id; menu.ontoggle = () => { if (menu.open) menuOpen = s.id; else if (menuOpen === s.id) menuOpen = null; };
+    const item = (label, fn, off, tip) => { const b = el("button", "", label); b.disabled = !!off; if (tip) b.title = tip; b.onclick = () => { menuOpen = null; fn(b); }; pop.append(b); };
+    if (s.chat) {
+      if (data.has_claude && !s.ai) item(busy[s.id + "s"] ? t("sumBusy") : t("sum"), () => act("/api/summarize", s.id, "s"), busy[s.id + "s"], t("sumTip"));
+      item(t("cmd"), () => { navigator.clipboard.writeText(`cd "${s.cwd}" && claude --resume ${s.id}`); render(); }, false, t("cmdTip"));
+    }
+    item(t("openFolder"), () => act("/api/open-folder", s.chat ? s.cwd : p.root, "o", s.id));
+    item(t("toArchive"), () => mark(s, {archived: true}));
+    menu.append(sm, pop); acts.append(menu);
+  }
+  c.append(acts);
+  if (errors[s.id]) c.append(el("div", "err", errors[s.id]));
+  return c;
+}
+function newChatUI(root) {
+  const b = el("button", "btn" + (ncOpen === root ? " on" : ""), t("newChat"));
+  b.onclick = () => { ncOpen = ncOpen === root ? null : root; render(); };
+  if (ncOpen !== root) return b;
+  const f = el("div", "ncf"), ta = el("textarea"); ta.placeholder = t("promptPh"); ta.value = ncDraft[root] || "";
+  ta.oninput = () => { ncDraft[root] = ta.value; };
+  const sel = el("select"); [["", t("mDefault")], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]].forEach(([v, l]) => { const o = el("option", "", l); o.value = v; sel.append(o); });
+  sel.value = ncModel[root] || ""; sel.onchange = () => { ncModel[root] = sel.value; };
+  const go = el("button", "btn main", busy[root + "n"] ? t("working") : t("startChat")); go.disabled = !!busy[root + "n"];
+  go.onclick = async () => {
+    busy[root + "n"] = true; delete errors[root]; render();
+    const r = await post("/api/new-chat", {id: root, prompt: ncDraft[root] || "", model: ncModel[root] || ""});
+    delete busy[root + "n"];
+    if (!r.ok) errors[root] = r.error || t("outdated"); else { ncDraft[root] = ""; ncOpen = null; ncNote[root] = t("started"); setTimeout(() => { delete ncNote[root]; render(); }, 4000); }
+    render();
+  };
+  const row = el("div", "row"); row.append(sel, go); f.append(ta, row);
+  setTimeout(() => { if (document.activeElement === document.body) ta.focus(); }, 0);
+  const wrap = el("span"); wrap.append(b); wrap.form = f; return wrap;
+}
+function addNewChat(acts, root) {
+  const ui = newChatUI(root);
+  acts.append(ui);
+  if (ui.form) acts.after(ui.form);
+  if (ncNote[root]) acts.after(el("div", "meta", ncNote[root]));
+}
+function column(title, tint, hint, items, p) {
+  const col = el("div", "col" + (p && !items.length ? " small" : "")); if (p) col.dataset.root = p.root;
+  const h = el("h2"); const d = el("span", "dot"); d.style.background = tint;
+  h.append(d, document.createTextNode(title), el("b", "", String(items.length)));
+  col.append(h);
+  if (hint) col.append(el("div", "hint", hint));
+  if (p) {
+    if (p.brief) { const b = el("div", "brief"); b.append(el("div", "lab", t("overview")), list(p.brief)); col.append(b); }
+    const acts = el("div", "colacts");
+    acts.append(openBtn(p.root, p.root));
+    if (data.has_claude) {
+      const a = el("button", "btn", busy[p.root + "b"] ? t("analyzing") : p.brief ? t("reanalyze") : t("analyze")); a.disabled = !!busy[p.root + "b"]; a.title = t("analyzeTip");
+      a.onclick = () => act("/api/brief", p.root, "b"); acts.append(a);
+    }
+    if (p.added) { const r = el("button", "btn", t("remove")); r.onclick = () => act("/api/remove-folder", p.root, "x"); acts.append(r); }
+    col.append(acts);
+    addNewChat(acts, p.root);
+    if (errors[p.root]) col.append(el("div", "err", errors[p.root]));
+  }
+  if (!items.length) col.append(el("div", "empty", t("empty")));
+  items.forEach(s => col.append(card(s)));
+  return col;
+}
+function folderCard(p) {
+  const c = el("div", "card"); c.style.setProperty("--c", color(p));
+  const top = el("div", "top"), pl = el("button", "plink", p.name); pl.title = t("goProject"); pl.onclick = () => goProject(p.root);
+  const name = el("span", "proj"); name.append(pl);
+  top.append(name, el("span", "", p.last ? t("lastChange") + " " + ago(p.last) : t("noChange")));
+  c.append(top, el("div", "fpath", p.root));
+  if (p.brief) { const b = el("div", "sumbox"); b.append(el("div", "lab", t("overview")), list(p.brief)); c.append(b); }
+  if (p.recent.length) {
+    c.append(el("div", "lab", t("recently")));
+    const ul = el("ul", "flist"); p.recent.forEach(r => { const li = el("li"); li.append(el("span", "", r.path), el("span", "", ago(r.mtime))); ul.append(li); }); c.append(ul);
+  }
+  const chats = data ? data.sessions.filter(x => x.chat && x.root === p.root).length : 0;
+  c.append(el("div", "meta", t("filesN")(p.files) + " · " + t("chatsN")(chats)));
+  const acts = el("div", "acts");
+  if (data && data.has_claude) {
+    const a = el("button", "btn", busy[p.root + "b"] ? t("analyzing") : p.brief ? t("reanalyze") : t("analyze")); a.disabled = !!busy[p.root + "b"]; a.title = t("analyzeTip");
+    a.onclick = async () => { await act("/api/brief", p.root, "b"); loadFolders(); }; acts.append(a);
+  }
+  acts.append(openBtn(p.root, p.root));
+  const cp = el("button", "btn", t("copyPath")); cp.onclick = () => navigator.clipboard.writeText(p.root).then(() => { cp.textContent = t("copied"); }); acts.append(cp);
+  c.append(acts);
+  addNewChat(acts, p.root);
+  if (errors[p.root]) c.append(el("div", "err", errors[p.root]));
+  return c;
+}
+function renderFolders(board) {
+  board.className = "fview";
+  if (!fdata) { board.append(el("div", "empty", t("working"))); return; }
+  if (!fdata.groups.length) { board.append(el("div", "empty", t("fEmpty"))); return; }
+  board.append(el("div", "hint", t("fHint")));
+  fdata.groups.forEach(g => {
+    const sec = el("div", "fgroup"), hd = el("div", "fgh");
+    hd.append(el("h2", "", g.name), el("span", "", g.root));
+    const rm = el("button", "btn", t("remove")); rm.onclick = async () => { await act("/api/remove-folder", g.root, "x"); loadFolders(); }; hd.append(rm);
+    sec.append(hd);
+    const grid = el("div", "fgrid"); g.projects.forEach(p => grid.append(folderCard(p))); sec.append(grid);
+    if (errors[g.root]) sec.append(el("div", "err", errors[g.root]));
+    board.append(sec);
+  });
+}
+async function loadFolders() {
+  const r = await post("/api/folders", {});
+  if (r.ok) fdata = r; else errors.folders = r.error || t("outdated");
+  render();
+}
+function render() {
+  document.documentElement.lang = lang;
+  document.getElementById("sub").textContent = t("sub");
+  document.querySelectorAll("[data-t]").forEach(e => { e.textContent = t(e.dataset.t); });
+  document.querySelectorAll("#lang button").forEach(b => b.classList.toggle("on", b.dataset.l === lang));
+  document.body.classList.toggle("compact", compact);
+  document.getElementById("dens").textContent = compact ? t("compactOn") : t("compactOff");
+  document.getElementById("dens").classList.toggle("on", compact);
+  const z = 1 + zoomLevel * 0.1; document.body.style.zoom = z; document.getElementById("zval").textContent = Math.round(z * 100) + "%";
+  const ban = document.getElementById("banner");
+  ban.hidden = !(OLD_SERVER || data && data.stale); ban.textContent = t("outdated");
+  if (!data) return;
+  const board = document.getElementById("board"), blank = document.getElementById("blank"), chips = document.getElementById("chips");
+  const all = data.sessions, none = !all.length && !data.projects.some(p => p.added) && view !== "folders" && view !== "archive";
+  blank.hidden = !none; board.hidden = chips.hidden = none;
+  if (none) {
+    blank.replaceChildren(el("p", "", data.found ? t("noChats") : t("noHist")), el("p", "", t("looked") + data.source));
+    document.getElementById("stat").textContent = "";
+    document.getElementById("foot").replaceChildren(...(data.sources || []).map(x => el("div", "", x.found ? t("src")(x.path, x.files, x.in_range) : t("srcMissing")(x.path)))); return;
+  }
+  chips.replaceChildren();
+  const count = p => all.filter(x => x.root === p.root && !x.archived).length;
+  const busyP = data.projects.filter(p => count(p) || p.added), idle = data.projects.filter(p => !count(p) && !p.added);
+  busyP.forEach(p => {
+    const b = el("button", "chip" + (hidden.has(p.root) ? " off" : "")); b.title = p.root;
+    const d = el("span", "dot"); d.style.background = color(p);
+    b.append(d, document.createTextNode(p.name + " · " + count(p)));
+    b.onclick = () => { hidden.has(p.root) ? hidden.delete(p.root) : hidden.add(p.root); render(); };
+    chips.append(b);
+  });
+  const arch = all.filter(s => s.archived);
+  document.getElementById("archTab").textContent = t("archiveTab")(arch.length);
+  const shown = all.filter(s => !hidden.has(s.root) && !s.archived);
+  const n = k => shown.filter(s => s.status === k).length;
+  board.replaceChildren(); board.className = "";
+  if (view === "archive") {
+    board.className = "fview";
+    board.append(el("div", "hint", arch.length ? t("archHint") : t("archEmpty")));
+    const grid = el("div", "fgrid"); arch.forEach(s => grid.append(card(s))); board.append(grid);
+  }
+  else if (view === "folders") renderFolders(board);
+  else if (view === "status") COLS.forEach(([k, tint]) => { if ((k !== "planned" && k !== "done") || n(k)) board.append(column(t(k), tint, t(k + "H"), shown.filter(s => s.status === k))); });
+  else busyP.concat(idle).forEach(p => { if (!hidden.has(p.root)) board.append(column(p.name, color(p), p.root, shown.filter(s => s.root === p.root), p)); });
+  const w = n("waiting") + n("review");
+  document.getElementById("stat").textContent = t("stat")(busyP.length, shown.filter(s => s.chat).length, w);
+  const foot = (data.sources || []).map(x => x.found ? t("src")(x.path, x.files, x.in_range) : t("srcMissing")(x.path));
+  if (idle.length && view === "status") foot.unshift(t("emptyProjects")(idle.length));
+  document.getElementById("foot").replaceChildren(...foot.map(x => el("div", "", x)));
+  const left = pending().length, trb = document.getElementById("tr");
+  trb.hidden = !data.has_claude; trb.title = t("trTip"); trb.classList.toggle("on", autoTr);
+  trb.textContent = !autoTr ? t("trOff") : left && trBusy ? t("trBusy")(left) : t("trOn");
+  document.title = t("title")(w);
+}
+function query() {
+  if (range) return `from=${range[0]}&to=${range[1]}`;
+  const d = new Date(); if (days === 1) d.setHours(0, 0, 0, 0); else d.setTime(d.getTime() - days * 864e5);
+  return "from=" + d.getTime() / 1000;
+}
+const pending = () => !data ? [] : data.sessions.filter(s => s.chat && !s.archived && s.status !== "running" && !(s.tr && s.tr[lang]) && !trFailed.has(s.id + lang));
+async function translateLoop() {
+  if (trBusy || !autoTr) return;
+  trBusy = true;
+  while (autoTr && pending().length) {
+    render();
+    const ids = pending().slice(0, 8).map(s => s.id), r = await post("/api/translate", {ids});
+    if (!r.ok || !r.done) ids.forEach(i => trFailed.add(i + lang));
+    if (!r.ok) { document.getElementById("foot").prepend(el("div", "err", r.error || t("outdated"))); break; }
+    await load(true);
+  }
+  trBusy = false; render();
+}
+async function load(inner) {
+  try { data = await (await fetch("/api/data?" + query())).json(); render(); if (!inner) translateLoop(); }
+  catch (e) { document.getElementById("stat").textContent = t("stopped"); }
+}
+function seg(id, attr, set) {
+  document.getElementById(id).onclick = e => {
+    const b = e.target.closest("button"); if (!b) return;
+    [...b.parentNode.children].forEach(x => x.classList.toggle("on", x === b));
+    set(b.dataset[attr]);
+  };
+}
+seg("view", "v", v => { view = v; if (v === "folders") loadFolders(); render(); });
+seg("days", "d", d => { days = +d; range = null; document.getElementById("from").value = document.getElementById("to").value = ""; load(); });
+function dates() {
+  const f = document.getElementById("from").value, to = document.getElementById("to").value;
+  if (!f && !to) return;
+  range = [f ? new Date(f + "T00:00").getTime() / 1000 : 0, to ? new Date(to + "T23:59:59").getTime() / 1000 : Date.now() / 1000 + 60];
+  document.querySelectorAll("#days button").forEach(b => b.classList.remove("on")); load();
+}
+document.getElementById("from").onchange = document.getElementById("to").onchange = dates;
+document.getElementById("tr").onclick = () => { autoTr = !autoTr; try { localStorage.setItem("pult-tr", autoTr ? "1" : "0"); } catch (e) {} render(); translateLoop(); };
+seg("lang", "l", l => { lang = l; try { localStorage.setItem("pult-lang", l); } catch (e) {} render(); setupRender(); translateLoop(); });
+document.getElementById("add").onclick = async () => {
+  let r = await post("/api/add-folder", {});
+  if (r.need_path) { const path = prompt(t("askPath")); if (!path) return; r = await post("/api/add-folder", {path}); }
+  if (!r.ok && r.error) alert(r.error);
+  if (view === "folders") loadFolders();
+  if (r.root) { view = "project"; document.querySelectorAll("#view button").forEach(b => b.classList.toggle("on", b.dataset.v === "project")); }
+  load();
+};
+let setup = null, setupBusy = false, setupErr = "", setupNote = "";
+async function setupLoad() {
+  const r = await post("/api/setup", {});
+  if (r.ok) setup = r; else setupErr = r.error || t("outdated");
+  setupRender();
+}
+async function setupDo(path, body) {
+  setupBusy = true; setupErr = ""; setupRender();
+  const r = await post(path, body);
+  if (!r.ok) setupErr = r.error || t("outdated");
+  setupBusy = false; await setupLoad();
+}
+function setupRow(on, title, desc, path, disabled) {
+  const row = el("div", "srow"), tx = el("div", "tx");
+  row.append(el("span", "ic " + (on ? "ok" : "no"), on ? "\u2714" : "\u25CB"));
+  tx.append(el("b", "", title), el("span", "", desc)); row.append(tx);
+  if (path) { const b = el("button", "btn" + (on ? "" : " main"), on ? t("turnOff") : t("turnOn"));
+    b.disabled = setupBusy || disabled; b.onclick = () => setupDo(path, {on: !on}); row.append(b); }
+  return row;
+}
+function setupRender() {
+  document.querySelectorAll("#setup [data-t]").forEach(e => { e.textContent = t(e.dataset.t); });
+  const body = document.getElementById("setupBody"); body.replaceChildren();
+  if (!setup) { body.append(el("div", setupErr ? "err" : "", setupErr || t("working"))); return; }
+  const s = setup, noRepo = !s.repo, badSettings = !!s.settings_error;
+  if (noRepo) body.append(el("div", "err", t("repoMissing")));
+  if (badSettings) {
+    body.append(el("div", "err", s.settings_error));
+    if (s.repairable) { const rb = el("button", "btn main", t("repair")); rb.disabled = setupBusy; rb.onclick = () => setupDo("/api/setup/repair", {});
+      const ra = el("div", "acts"); ra.append(rb, el("span", "ask", t("repairD"))); body.append(ra); }
+  }
+  const all = el("button", "btn main", setupBusy ? t("working") : t("allOn"));
+  all.disabled = setupBusy || noRepo || (s.hooks && s.mcp && s.rule);
+  all.onclick = async () => {
+    setupBusy = true; setupErr = ""; setupRender();
+    for (const [k, p] of [["hooks", "/api/setup/hooks"], ["mcp", "/api/setup/mcp"], ["rule", "/api/setup/rule"]]) {
+      if (s[k]) continue; const r = await post(p, {on: true}); if (!r.ok) { setupErr = r.error || t("outdated"); break; }
+    }
+    setupBusy = false; await setupLoad();
+  };
+  const top = el("div", "acts"); top.append(all); body.append(top);
+  body.append(setupRow(s.hooks, t("sHooks"), t("sHooksD"), "/api/setup/hooks", noRepo || badSettings),
+              setupRow(s.mcp, t("sMcp"), t("sMcpD"), "/api/setup/mcp", noRepo || !s.has_claude),
+              setupRow(s.rule, t("sRule"), t("sRuleD"), "/api/setup/rule", false));
+  const fr = el("div", "srow"), ftx = el("div", "tx");
+  fr.append(el("span", "ic " + (s.folders.some(f => f.covered) || s.registered.length ? "ok" : "no"), s.registered.length ? "\u2714" : "\u25CB"));
+  ftx.append(el("b", "", t("sFolders")), el("span", "", t("sFoldersD")));
+  const ul = el("ul", "slist");
+  if (!s.folders.length) ul.append(el("li", "", t("noneAdded")));
+  s.folders.forEach(f => {
+    const li = el("li", "", f.path + " \u2014 " + (f.covered ? t("covered") : t("notCovered")) + " ");
+    if (!f.covered) { const b = el("button", "btn", t("apply")); b.disabled = setupBusy || noRepo; b.onclick = () => setupDo("/api/setup/register", {id: f.path}); li.append(b); }
+    ul.append(li);
+  });
+  if (s.registered.length) ul.append(el("li", "", t("registered") + s.registered.map(r => `${r.key} (${r.root})`).join(", ")));
+  ftx.append(ul); fr.append(ftx); body.append(fr);
+  const tr2 = el("div", "srow"), ttx = el("div", "tx");
+  tr2.append(el("span", "ic no", "\u25B6")); ttx.append(el("b", "", t("testRow")), el("span", "", t("testRowD")));
+  if (setupNote) ttx.append(el("div", "meta", setupNote));
+  const tb = el("button", "btn", t("testBtn")); tb.disabled = setupBusy || !s.has_claude;
+  tb.onclick = async () => {
+    setupBusy = true; setupErr = ""; setupNote = ""; setupRender();
+    const r = await post("/api/testbed", {});
+    setupBusy = false; if (!r.ok) setupErr = r.error || t("outdated"); else setupNote = t("testDone")(r.started);
+    await setupLoad(); load();
+  };
+  tr2.append(ttx, tb); body.append(tr2);
+  if (setupErr) body.append(el("div", "err", setupErr));
+  body.append(el("div", "snote", t("sNote")));
+}
+document.getElementById("setupBtn").onclick = () => { setup = null; setupRender(); document.getElementById("setup").showModal(); setupLoad(); };
+document.getElementById("dens").onclick = () => { compact = !compact; try { localStorage.setItem("pult-compact", compact ? "1" : "0"); } catch (e) {} render(); };
+document.getElementById("zoom").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  zoomLevel = +b.dataset.z ? Math.max(-4, Math.min(5, zoomLevel + +b.dataset.z)) : 0;
+  try { localStorage.setItem("pult-zoom", zoomLevel); } catch (e2) {} render();
+};
+document.addEventListener("click", e => { if (menuOpen && !e.target.closest(".menu")) { menuOpen = null; render(); } });
+document.getElementById("setupClose").onclick = () => document.getElementById("setup").close();
+render(); load(); setInterval(() => { if (!Object.keys(busy).length && !trBusy && !ncOpen && !menuOpen) { load(); if (view === "folders") loadFolders(); } }, 10000);
+</script>
+</body>
+</html>
