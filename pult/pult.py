@@ -46,7 +46,7 @@ BRIEF_FILE = CACHE_DIR / "briefs.json"
 TRANSLATION_FILE = CACHE_DIR / "translations.json"
 CARD_FILE = CACHE_DIR / "cards.json"
 CONFIG_FILE = CACHE_DIR / "config.json"
-LANGS = {"en": "English", "de": "German"}
+LANGS = {"en": "English", "de": "German", "ru": "Russian"}
 SKIP_DIRS = {"node_modules", ".git", "__pycache__", ".venv", "venv", "dist", "build", ".next", "cache"}
 EDIT_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 RUNNING_SECONDS = 150          # файл менялся недавно = чат ещё работает
