@@ -434,7 +434,8 @@ def _project_card(p: dict, now: datetime) -> Raw:
                    text=f"{n} chat{'s' if n != 1 else ''} working" if n else "No chat working")
     count = len(items)
     name = p["name"] or p["key"]
-    return render("_project_card.html", tone=tone, key=p["key"], name=name,
+    backlog = render("_card_backlog.html", key=p["key"], count=p["backlog"]) if p["backlog"] else ""
+    return render("_project_card.html", tone=tone, key=p["key"], name=name, backlog=backlog,
                   monogram=_logo(p["key"]) or monogram(name), tint=_tint(p["key"]),
                   status_icon=icon(status_icon), status=status,
                   count=count, count_class="" if count else "zero",

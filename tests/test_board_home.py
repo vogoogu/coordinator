@@ -20,6 +20,33 @@ class HomeClarifyTest(BoardBase):
         self.conn.execute("UPDATE task SET updated = ? WHERE number = ? AND project_id = "
                           "(SELECT id FROM project WHERE key = ?)", (stamp, int(number), key))
 
+    def note(self, key="PA", title="Maybe later"):
+        return core.create_task(self.conn, key, title, PERSON, backlog=True)["id"]
+
+    def test_card_shows_backlog_count_link(self):
+        self.note("PA", "one")
+        self.note("PA", "two")
+        body = self.get("/")[1]
+        self.assertIn('href="/p/PA#backlog"', body)
+        self.assertIn("Backlog 2", body)
+        self.assertEqual(body.count("#backlog"), 1)           # PB has no notes
+        pa = next(p for p in self.get_json("/api/index")["projects"] if p["key"] == "PA")
+        self.assertEqual(pa["backlog"], 2)
+
+    def test_card_without_notes_has_no_backlog_link(self):
+        self.clarify()
+        body = self.get("/")[1]
+        self.assertNotIn("#backlog", body)
+        for p in self.get_json("/api/index")["projects"]:
+            self.assertEqual(p["backlog"], 0)
+
+    def test_notes_never_count_as_clarify(self):
+        n = self.note()
+        body = self.get("/")[1]
+        self.assertEqual(self.get_json("/api/index")["clarify"], [])
+        self.assertIn("No task needs clarification.", body)
+        self.assertNotIn(f'href="/t/{n}"', body)
+
     def test_lists_only_clarify_tasks(self):
         c = self.clarify()
         blocked = self.task("PA", "Blocked one")
