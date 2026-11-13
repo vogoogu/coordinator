@@ -140,6 +140,13 @@ class HooksTest(unittest.TestCase):
         self.assertIn("sess-1", r.stdout)
         self.assertIn("has 1 open task(s)", r.stdout)
 
+    def test_session_start_count_ignores_backlog(self):
+        self.task()
+        for title in ("later one", "later two"):
+            core.create_task(self.conn, "KMU", title, PERSON, backlog=True)
+        r = self.start()
+        self.assertIn("has 1 open task(s)", r.stdout)
+
     def test_session_start_refused_claim_prints_refusal(self):
         tid = self.task()
         core.claim(self.conn, tid, "other")

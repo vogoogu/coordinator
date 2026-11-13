@@ -41,7 +41,10 @@ TOOLS = [
      "inputSchema": _schema(dict(_ID), ["id"])},
     {"name": "task_create",
      "description": ("Create a task in a project (no claim needed; at most 3 per "
-                     "session). It starts in the project's first waiting state (open). " + SID),
+                     "session). It starts in the project's first waiting state (open). "
+                     "For a note for the future, pass backlog true: only the title is "
+                     "needed, the task is parked in the backlog and cannot be claimed "
+                     "until it is specified and the person agreed. " + SID),
      "inputSchema": _schema({
          **_SESSION,
          "project": _s("Project key, for example KMU."),
@@ -49,7 +52,9 @@ TOOLS = [
          "goal": _s("What the task should achieve."),
          "done_when": _s("How to tell the task is done."),
          "scope": _s("What is in and out of scope."),
-         "origin": _s("Where the task came from.")},
+         "origin": _s("Where the task came from."),
+         "backlog": {"type": "boolean",
+                     "description": "True: park the task in the backlog (a note for later)."}},
          ["session_id", "project", "title"])},
     {"name": "task_claim",
      "description": ("Claim a task to work on it; moves it to its first active "
@@ -211,10 +216,15 @@ def _dispatch(conn, name, a):
     if name == "task_show":
         return core.get_task(conn, _req(a, "id"))
     if name == "task_create":
+        backlog = a.get("backlog")
+        if backlog is not None and not isinstance(backlog, bool):
+            raise _bad("The argument 'backlog' has the wrong type.",
+                       "It must be true or false.", "Pass 'backlog' as a boolean.")
         return core.create_task(
             conn, _req(a, "project"), _req(a, "title"), _actor(a),
             goal=_opt(a, "goal") or "", done_when=_opt(a, "done_when") or "",
-            scope=_opt(a, "scope") or "", origin=_opt(a, "origin") or "")
+            scope=_opt(a, "scope") or "", origin=_opt(a, "origin") or "",
+            backlog=bool(backlog))
     if name == "task_claim":
         _actor(a)
         return core.claim(conn, _req(a, "id"), a["session_id"], "", "")

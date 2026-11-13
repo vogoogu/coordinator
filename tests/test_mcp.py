@@ -119,6 +119,45 @@ class McpTest(unittest.TestCase):
             self.assertEqual(t["inputSchema"]["type"], "object")
             self.assertTrue(t["description"])
 
+    def test_task_create_backlog_note(self):
+        err, t = self.call("task_create", session_id="s1", project="KMU",
+                           title="Maybe later", backlog=True)
+        self.assertFalse(err, t)
+        self.assertEqual(t["state"], "backlog")
+        self.assertEqual(t["goal"], "")
+        err, text = self.call("task_claim", session_id="s2", id=t["id"])
+        self.assertTrue(err)
+        self.assertIn("backlog", text)
+
+    def test_task_create_backlog_missing_state_is_error(self):
+        root = Path(self.tmp, "nobl")
+        (root / ".coordinator").mkdir(parents=True)
+        (root / ".coordinator" / "project.toml").write_text(
+            'key = "NB"\nname = "No backlog"\n'
+            '[[states]]\nname = "open"\nkind = "waiting"\n'
+            '[[states]]\nname = "building"\nkind = "active"\n'
+            '[[states]]\nname = "clarify"\nkind = "handover"\n'
+            '[[states]]\nname = "review"\nkind = "handover"\n'
+            '[[states]]\nname = "done"\nkind = "finished"\n', encoding="utf-8")
+        old = os.environ.get("COORDINATOR_HOME")
+        os.environ["COORDINATOR_HOME"] = self.home
+        try:
+            conn = db.connect()
+            try:
+                core.add_project(conn, str(root), PERSON)
+            finally:
+                conn.close()
+        finally:
+            if old is None:
+                os.environ.pop("COORDINATOR_HOME", None)
+            else:
+                os.environ["COORDINATOR_HOME"] = old
+        err, text = self.call("task_create", session_id="s1", project="NB",
+                              title="x", backlog=True)
+        self.assertTrue(err)
+        self.assertEqual([l.split(":")[0] for l in text.splitlines()[:3]],
+                         ["WHAT", "WHY", "FIX"])
+
     def test_create_claim_release_round_trip(self):
         err, t = self.call("task_create", session_id="s1", project="KMU",
                            title="Do it", goal="g")

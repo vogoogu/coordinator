@@ -117,7 +117,7 @@ def _howto(conn, sid: str, cwd: str) -> str:
     if not proj:
         return f"Coordinator: {claim}"
     cfg = config.load_project(proj["root"])
-    final = {s.name for s in cfg.states if s.kind in ("finished", "closed")}
+    final = {s.name for s in cfg.states if s.kind in ("finished", "closed", "parked")}
     n = sum(1 for t in core.list_tasks(conn, proj["key"]) if t["state"] not in final)
     return f"Coordinator: project {proj['key']} has {n} open task(s). {claim}"
 
