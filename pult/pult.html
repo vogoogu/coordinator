@@ -6,11 +6,12 @@
 <title>Pult</title>
 <style>
 :root{
+  color-scheme:light dark; --danger:#c0392b; --on-accent:#fff;
   --bg:#f3f1ec; --panel:#ebe8e1; --card:#fff; --ink:#1c2430; --mute:#6a7482; --line:#dcd8cf;
   --accent:#0f5b57; --run:#1f6fd0; --wait:#b96a00; --rev:#2e7d4f; --brk:#8a8f98;
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#12161c; --panel:#181d25; --card:#1f2630; --ink:#e8ecf1; --mute:#93a0b0; --line:#2c3541;
+  :root{ --danger:#f07a6e; --on-accent:#0e1418; --bg:#12161c; --panel:#181d25; --card:#1f2630; --ink:#e8ecf1; --mute:#93a0b0; --line:#2c3541;
     --accent:#5fc7bf; --run:#6aa9f5; --wait:#f0a94a; --rev:#6fcf97; --brk:#8b95a3; }
 }
 *{box-sizing:border-box}
@@ -22,7 +23,8 @@ h1{font-size:19px;margin:0;letter-spacing:.02em}
 h1 small{font-weight:400;color:var(--mute);font-size:13px;margin-left:8px}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .seg button{border:0;background:transparent;color:var(--mute);padding:6px 12px;font:inherit;cursor:pointer}
-.seg button.on{background:var(--ink);color:var(--bg)}
+.seg button.on{background:var(--accent);color:var(--on-accent);font-weight:600}
+.seg button:not(.on):hover{color:var(--ink)}
 .spacer{flex:1}
 .stat{color:var(--mute);font-size:13px}
 #chips{display:flex;flex-wrap:wrap;gap:6px;padding:10px 20px 0}
@@ -42,7 +44,7 @@ h1 small{font-weight:400;color:var(--mute);font-size:13px;margin-left:8px}
 .flist li span:first-child{overflow-wrap:anywhere}
 .flist li span:last-child{color:var(--mute);flex:none}
 .ncf{margin-top:8px;display:grid;gap:6px}
-.ncf textarea,.ncf select{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;width:100%}
+.ncf textarea,.ncf select,.ncf option{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:6px 8px;width:100%}
 .ncf textarea{min-height:64px;resize:vertical}
 .ncf .row{display:flex;gap:6px}
 .ncf .row select{flex:1}
@@ -61,9 +63,12 @@ h1 small{font-weight:400;color:var(--mute);font-size:13px;margin-left:8px}
 .meta{font-size:12px;color:var(--mute);margin-top:6px}
 .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .btn{border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:7px;padding:4px 9px;font:inherit;font-size:12.5px;cursor:pointer}
-.btn.main{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+.btn.main{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.btn:not(:disabled):hover,.chip:hover{border-color:var(--mute)}
+.btn.main:not(:disabled):hover{filter:brightness(1.08);border-color:var(--accent)}
+.btn:focus-visible,.seg button:focus-visible,.chip:focus-visible,.menu summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .btn:disabled{opacity:.5;cursor:default}
-.err{color:#c0392b;font-size:12px;margin-top:6px}
+.err{color:var(--danger);font-size:12px;margin-top:6px}
 .empty{color:var(--mute);padding:8px 4px;font-size:13px}
 #blank{max-width:560px;margin:60px auto;padding:0 20px;color:var(--mute)}
 #blank b{color:var(--ink)}
@@ -73,8 +78,8 @@ h1 small{font-weight:400;color:var(--mute);font-size:13px;margin-left:8px}
 .tag.flag{color:var(--wait);border-color:var(--wait)}
 .colacts{display:flex;flex-wrap:wrap;gap:6px;margin:0 4px 10px}
 .dates{display:inline-flex;align-items:center;gap:6px;color:var(--mute);font-size:13px}
-.dates input{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 6px;color-scheme:light dark}
-.btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.dates input{font:inherit;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 6px}
+.btn.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .col.small{opacity:.75}
 footer{padding:0 20px 24px;color:var(--mute);font-size:12px;overflow-wrap:anywhere}
 .card .title{font-size:15px;font-weight:700;line-height:1.3;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--line)}
@@ -110,16 +115,19 @@ body.compact .card .title{border-bottom:0;padding-bottom:0;margin-bottom:4px;fon
 .more{border:0;background:none;color:var(--mute);font:inherit;font-size:12px;padding:0;cursor:pointer;margin-bottom:4px}
 .more:hover{color:var(--ink)}
 .prio{font-size:10.5px;font-weight:700;letter-spacing:.06em;border-radius:4px;padding:1px 6px;margin-right:6px;text-transform:uppercase}
-.prio.p3{background:#d6453d;color:#fff}.prio.p2{background:#e0a030;color:#1c2430}.prio.p1{background:var(--line);color:var(--ink)}
+.prio{border:1px solid var(--pc);color:var(--pc);background:color-mix(in srgb,var(--pc) 14%,transparent)}
+.prio.p3,.pdot.p3{--pc:var(--danger)}.prio.p2,.pdot.p2{--pc:var(--wait)}.prio.p1,.pdot.p1{--pc:var(--mute)}
+.pdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--pc,transparent);border:1px solid var(--pc,var(--line));margin-right:7px}
 .card.isdone{opacity:.72}
 .card.isdone .title{text-decoration:line-through;text-decoration-color:var(--mute)}
-.acts select{font:inherit;font-size:12.5px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:7px;padding:3px 4px;color-scheme:light dark}
 .menu{position:relative}
 .menu summary{list-style:none;cursor:pointer}
 .menu summary::-webkit-details-marker{display:none}
-.menu .pop{position:absolute;z-index:5;top:calc(100% + 4px);left:0;min-width:190px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px;box-shadow:0 6px 18px rgba(0,0,0,.18);display:grid;gap:2px}
+.menu .pop{position:fixed;z-index:20;top:0;left:0;min-width:170px;max-width:280px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:5px;box-shadow:0 6px 18px rgba(0,0,0,.18);display:grid;gap:2px}
 .menu .pop button{border:0;background:none;color:var(--ink);font:inherit;font-size:13px;text-align:left;padding:6px 8px;border-radius:6px;cursor:pointer}
-.menu .pop button:hover{background:var(--panel)}
+.menu .pop button:not(:disabled):hover{background:var(--panel)}
+.menu .pop button.cur{background:color-mix(in srgb,var(--accent) 16%,transparent);font-weight:600}
+.menu[open]>summary{border-color:var(--accent)}
 .menu .pop button:disabled{opacity:.5;cursor:default}
 .tools{display:inline-flex;gap:6px;align-items:center}
 .pulse{animation:p 1.4s ease-in-out infinite}
@@ -151,7 +159,7 @@ const TOKEN = "__TOKEN__", VERSION = "__VERSION__";
 const OLD_SERVER = VERSION === "__" + "VERSION__";
 const T = {
  en: {sub:"every Claude Code chat on this computer", archiveTab:n=>`Archive${n ? " · " + n : ""}`, doneCol:"Done", done:"Done", doneH:"Marked done by you or closed in coordinator", markDone:"✓ Done", reopen:"Reopen", toArchive:"Archive", restore:"Restore",
-  moreBtn:"More", showMore:"Show more", showLess:"Show less", prioNone:"Priority", p3:"High", p2:"Medium", p1:"Low", compactOn:"Compact", compactOff:"Detailed",
+  moreBtn:"More", showMore:"Show more", showLess:"Show less", prioNone:"Priority", prioOff:"No priority", p3:"High", p2:"Medium", p1:"Low", compactOn:"Compact", compactOff:"Detailed",
   archEmpty:"The archive is empty. Use More > Archive on a card to move it here.", archHint:"Archived cards. A card comes back by itself when its chat gets new activity.",
   lastChange:"last change", noChange:"no files yet", filesN:n=>`${n} files`, chatsN:n=>`${n} Claude Code chats`, recently:"Recently changed",
   newChat:"New chat", startChat:"Start", promptPh:"First message (optional)", mDefault:"Default model", copyPath:"Copy path", started:"Started in a new window",
@@ -176,7 +184,7 @@ const T = {
   looked:"Looked here: ", stat:(p,c,w)=>`${p} projects · ${c} chats · waiting for you: ${w}`, title:w=>`${w} waiting · Pult`, stopped:"Pult is stopped. Run START.bat again.",
   down:"Pult does not answer. Is it still running?", askPath:"Paste the full path of the folder:", now:"just now", min:m=>`${m} min ago`, hr:h=>`${h} h ago`, day:d=>`${d} d ago`},
  de: {sub:"alle Claude-Code-Chats auf diesem Computer", archiveTab:n=>`Archiv${n ? " · " + n : ""}`, doneCol:"Erledigt", done:"Erledigt", doneH:"Von dir als erledigt markiert oder im Coordinator geschlossen", markDone:"✓ Erledigt", reopen:"Wieder öffnen", toArchive:"Archivieren", restore:"Wiederherstellen",
-  moreBtn:"Mehr", showMore:"Mehr anzeigen", showLess:"Weniger anzeigen", prioNone:"Priorität", p3:"Hoch", p2:"Mittel", p1:"Niedrig", compactOn:"Kompakt", compactOff:"Ausführlich",
+  moreBtn:"Mehr", showMore:"Mehr anzeigen", showLess:"Weniger anzeigen", prioNone:"Priorität", prioOff:"Keine Priorität", p3:"Hoch", p2:"Mittel", p1:"Niedrig", compactOn:"Kompakt", compactOff:"Ausführlich",
   archEmpty:"Das Archiv ist leer. Mit Mehr > Archivieren verschiebst du eine Karte hierher.", archHint:"Archivierte Karten. Eine Karte kommt von selbst zurück, wenn ihr Chat neue Aktivität hat.",
   lastChange:"zuletzt geändert", noChange:"noch keine Dateien", filesN:n=>`${n} Dateien`, chatsN:n=>`${n} Claude-Code-Chats`, recently:"Zuletzt geändert",
   newChat:"Neuer Chat", startChat:"Starten", promptPh:"Erste Nachricht (optional)", mDefault:"Standardmodell", copyPath:"Pfad kopieren", started:"In neuem Fenster gestartet",
@@ -248,6 +256,7 @@ function goProject(root) {
 }
 function list(items) { const ul = el("ul"); items.forEach(i => ul.append(el("li", "", i))); return ul; }
 let expanded = new Set(), menuOpen = null, compact = false, zoomLevel = 0;
+let ncOpen = null, ncDraft = {}, ncModel = {}, ncNote = {};
 try { compact = localStorage.getItem("pult-compact") === "1"; zoomLevel = +localStorage.getItem("pult-zoom") || 0; } catch (e) {}
 async function mark(s, change) {
   Object.assign(s, change.priority !== undefined ? {priority: change.priority} : {});
@@ -256,6 +265,27 @@ async function mark(s, change) {
   if (!r.ok) errors[s.id] = r.error || t("outdated");
   await load(true);
 }
+function placePop(pop, sm) {
+  const z = parseFloat(document.body.style.zoom) || 1, r = sm.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight, vw = innerWidth / z, vh = innerHeight / z;
+  let left = r.left / z, top = r.bottom / z + 4;
+  if (left + w > vw - 8) left = Math.max(8, r.right / z - w);
+  if (top + h > vh - 8) top = Math.max(8, r.top / z - 4 - h);
+  pop.style.left = left + "px"; pop.style.top = top + "px";
+}
+function popMenu(key, label) {
+  const menu = el("details", "menu"), sm = el("summary", "btn", label), pop = el("div", "pop");
+  menu.open = menuOpen === key;
+  menu.ontoggle = () => {
+    if (!menu.isConnected) return;     // a card that a re-render has already replaced
+    if (menu.open) { menuOpen = key; placePop(pop, sm); document.querySelectorAll(".menu[open]").forEach(m => { if (m !== menu) m.open = false; }); }
+    else if (menuOpen === key) menuOpen = null;
+  };
+  const item = (label, fn, off, tip) => { const b = el("button", "", label); b.disabled = !!off; if (tip) b.title = tip; b.onclick = () => { menuOpen = null; fn(b); }; pop.append(b); return b; };
+  menu.append(sm, pop);
+  return {menu, item};
+}
+function closeMenus() { if (menuOpen) { menuOpen = null; document.querySelectorAll(".menu[open]").forEach(m => { m.open = false; }); } }
 function card(s) {
   const p = proj(s.root), open = expanded.has(s.id), isDone = s.status === "done";
   const c = el("div", "card" + (open ? " open" : " clamp") + (isDone ? " isdone" : "")); c.style.setProperty("--c", color(p));
@@ -300,19 +330,20 @@ function card(s) {
     }
     if (s.marked_done) { const ro = el("button", "btn", t("reopen")); ro.onclick = () => mark(s, {done: false}); acts.append(ro); }
     else if (!isDone) { const dn = el("button", "btn", t("markDone")); dn.onclick = () => mark(s, {done: true}); acts.append(dn); }
-    const sel = el("select"); sel.title = t("prioNone");
-    [[0, t("prioNone")], [3, t("p3")], [2, t("p2")], [1, t("p1")]].forEach(([v, l]) => { const o = el("option", "", l); o.value = v; sel.append(o); });
-    sel.value = s.priority || 0; sel.onchange = () => mark(s, {priority: +sel.value}); acts.append(sel);
-    const menu = el("details", "menu"), sm = el("summary", "btn", t("moreBtn") + " ▾"), pop = el("div", "pop");
-    menu.open = menuOpen === s.id; menu.ontoggle = () => { if (menu.open) menuOpen = s.id; else if (menuOpen === s.id) menuOpen = null; };
-    const item = (label, fn, off, tip) => { const b = el("button", "", label); b.disabled = !!off; if (tip) b.title = tip; b.onclick = () => { menuOpen = null; fn(b); }; pop.append(b); };
+    const pm = popMenu(s.id + ":p", (s.priority ? t("p" + s.priority) : t("prioNone")) + " ▾");
+    [[3, "p3"], [2, "p2"], [1, "p1"], [0, "prioOff"]].forEach(([v, k]) => {
+      const b = pm.item(t(k), () => mark(s, {priority: v}));
+      b.prepend(el("span", "pdot" + (v ? " p" + v : ""))); if ((s.priority || 0) === v) b.classList.add("cur");
+    });
+    acts.append(pm.menu);
+    const mm = popMenu(s.id, t("moreBtn") + " ▾"), menu = mm.menu, item = mm.item;
     if (s.chat) {
       if (data.has_claude && !s.ai) item(busy[s.id + "s"] ? t("sumBusy") : t("sum"), () => act("/api/summarize", s.id, "s"), busy[s.id + "s"], t("sumTip"));
       item(t("cmd"), () => { navigator.clipboard.writeText(`cd "${s.cwd}" && claude --resume ${s.id}`); render(); }, false, t("cmdTip"));
     }
     item(t("openFolder"), () => act("/api/open-folder", s.chat ? s.cwd : p.root, "o", s.id));
     item(t("toArchive"), () => mark(s, {archived: true}));
-    menu.append(sm, pop); acts.append(menu);
+    acts.append(menu);
   }
   c.append(acts);
   if (errors[s.id]) c.append(el("div", "err", errors[s.id]));
@@ -544,6 +575,8 @@ document.getElementById("zoom").onclick = e => {
   try { localStorage.setItem("pult-zoom", zoomLevel); } catch (e2) {} render();
 };
 document.addEventListener("click", e => { if (menuOpen && !e.target.closest(".menu")) { menuOpen = null; render(); } });
+document.addEventListener("scroll", closeMenus, true); addEventListener("resize", closeMenus);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenus(); });
 document.getElementById("setupClose").onclick = () => document.getElementById("setup").close();
 render(); load(); setInterval(() => { if (!Object.keys(busy).length && !trBusy && !ncOpen && !menuOpen) { load(); } }, 10000);
 </script>
