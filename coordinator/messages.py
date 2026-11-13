@@ -191,6 +191,19 @@ def claim_parked(display_id):
         "then move it to open.")
 
 
+def leave_backlog_missing(display_id, field):
+    if field == "note":
+        return CoordinatorError(
+            f"{display_id} was not moved out of the backlog.",
+            "A chat moves a note out of the backlog only with the person's agreement, "
+            "and the note is empty.",
+            "Ask the person to agree, then give a note that quotes their words.")
+    return CoordinatorError(
+        f"{display_id} was not moved out of the backlog.",
+        f"A parked task must be specified first, and {field!r} is empty.",
+        f"Fill in {field!r} first (goal, done_when and scope are all needed).")
+
+
 def no_backlog_state(project_key):
     return CoordinatorError(
         f"The note was not created in {project_key}.",

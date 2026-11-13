@@ -271,10 +271,13 @@ def _live_claims(conn, task_pk) -> list:
         " ORDER BY id", (task_pk,))]
 
 
-def _require_edit_rights(conn, task, actor: Actor, attempted: str):
+def _require_edit_rights(conn, task, actor: Actor, attempted: str, cfg=None):
     """R3: a person may edit; a chat needs its own live claim, or must have
-    created the task while nobody holds a live claim."""
+    created the task while nobody holds a live claim. With `cfg` given, any chat
+    may edit a parked (backlog) task: nobody can claim it, and chats specify it."""
     if actor.type == "person":
+        return
+    if cfg is not None and is_parked(cfg, task["state"]):
         return
     holders = _live_claims(conn, task["pk"])
     if actor.id in holders:
@@ -300,7 +303,7 @@ def set_state(conn, display_id, new_state, actor: Actor,
         task, cfg = _load(conn, display_id)
         pk = task["pk"]
         attempted = f"set state {task['state']} -> {new_state}"
-        _require_edit_rights(conn, task, actor, attempted)
+        _require_edit_rights(conn, task, actor, attempted, cfg)
         if expected_state is not None and expected_state != task["state"]:
             _refuse(conn, pk, actor,
                     messages.stale_state(task["id"], expected_state, task["state"]),
@@ -322,6 +325,14 @@ def set_state(conn, display_id, new_state, actor: Actor,
             if not str(value or "").strip():
                 _refuse(conn, pk, actor, messages.requires_missing(target.name, req),
                         attempted)
+        if is_parked(cfg, task["state"]) and target.kind in ("waiting", "active", "handover"):
+            # leaving the backlog for work: the task must be specified; a chat also
+            # needs a note that quotes the person's agreement
+            for req in ("goal", "done_when", "scope") + (("note",) if actor.type == "chat" else ()):
+                value = note if req == "note" else task.get(req)
+                if not str(value or "").strip():
+                    _refuse(conn, pk, actor,
+                            messages.leave_backlog_missing(task["id"], req), attempted)
         now = _now()
         if target.name != task["state"]:
             _bump(conn, pk, now, state=target.name)
@@ -338,10 +349,10 @@ def set_state(conn, display_id, new_state, actor: Actor,
 
 def set_fields(conn, display_id, actor: Actor, **fields) -> dict:
     with _write(conn):
-        task, _cfg = _load(conn, display_id)
+        task, cfg = _load(conn, display_id)
         pk = task["pk"]
         attempted = "set fields " + ", ".join(sorted(fields))
-        _require_edit_rights(conn, task, actor, attempted)
+        _require_edit_rights(conn, task, actor, attempted, cfg)
         for name, value in fields.items():
             if name not in EDITABLE_FIELDS:
                 _refuse(conn, pk, actor,

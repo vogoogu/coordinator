@@ -75,6 +75,52 @@ class CoreStatesTest(unittest.TestCase):
         self.assertEqual(r["state"], "clarify")
         self.assertEqual(r["version"], 2)
 
+    SPEC = dict(goal="g", done_when="d", scope="s")
+
+    def note(self, actor=None):
+        return core.create_task(self.conn, "KMU", "later", actor or chat("a"),
+                                backlog=True)["id"]
+
+    def test_chat_moves_specified_note_to_open_with_note(self):
+        n = self.note()
+        core.set_fields(self.conn, n, chat("b"), **self.SPEC)   # b did not create it
+        out = core.set_state(self.conn, n, "open", chat("b"), note="Daria agreed 2026-11-13")
+        self.assertEqual(out["state"], "open")
+        e = self.events(n, "state")[-1]
+        self.assertEqual((e["actor_type"], e["actor_id"]), ("chat", "b"))
+        self.assertEqual((e["from_value"], e["to_value"]), ("backlog", "open"))
+        self.assertEqual(e["note"], "Daria agreed 2026-11-13")
+
+    def test_chat_move_without_note_refuses(self):
+        n = self.note()
+        core.set_fields(self.conn, n, chat("b"), **self.SPEC)
+        self.assertRefused(core.set_state, self.conn, n, "open", chat("b"), why="note")
+        self.assertEqual(core.get_task(self.conn, n)["state"], "backlog")
+
+    def test_move_without_spec_refuses_naming_first_empty_field(self):
+        n = self.note()
+        self.assertRefused(core.set_state, self.conn, n, "open", chat("b"),
+                           note="agreed", why="goal")
+        core.set_fields(self.conn, n, chat("b"), goal="g")
+        self.assertRefused(core.set_state, self.conn, n, "open", chat("b"),
+                           note="agreed", why="done_when")
+        self.assertRefused(core.set_state, self.conn, n, "open", PERSON, why="done_when")
+
+    def test_person_move_needs_spec_but_no_note(self):
+        n = self.note()
+        core.set_fields(self.conn, n, PERSON, **self.SPEC)
+        self.assertEqual(core.set_state(self.conn, n, "open", PERSON)["state"], "open")
+
+    def test_note_can_be_dropped_without_spec(self):
+        n = self.note()
+        out = core.set_state(self.conn, n, "dropped", PERSON, note="not needed")
+        self.assertEqual(out["state"], "dropped")
+
+    def test_open_still_reachable_from_clarify_without_spec(self):
+        t = self.task()["id"]
+        core.set_state(self.conn, t, "clarify", PERSON, note="q")
+        self.assertEqual(core.set_state(self.conn, t, "open", PERSON)["state"], "open")
+
     def test_unknown_state_lists_valid(self):
         t = self.task()
         self.assertRefused(core.set_state, self.conn, t["id"], "nope", PERSON,

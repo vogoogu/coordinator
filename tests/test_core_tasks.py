@@ -168,6 +168,18 @@ class CoreTasksTest(unittest.TestCase):
         self.assertIn("parked", cm.exception.fix)
         self.assertEqual(core.list_tasks(self.conn, "NB"), [])
 
+    def test_other_chat_can_edit_parked_note(self):
+        self.project()
+        n = core.create_task(self.conn, "KMU", "later", chat("a"), backlog=True)["id"]
+        out = core.set_fields(self.conn, n, chat("b"), goal="g")
+        self.assertEqual(out["goal"], "g")
+
+    def test_other_chat_cannot_edit_unclaimed_open_task(self):
+        self.project()
+        t = core.create_task(self.conn, "KMU", "now", chat("a"))["id"]
+        with self.assertRaises(core.CoordinatorError):
+            core.set_fields(self.conn, t, chat("b"), goal="g")
+
     def test_project_for_path_finds_nested_file(self):
         p = self.project()
         f = Path(p["root"], "sub", "deep", "x.txt")
