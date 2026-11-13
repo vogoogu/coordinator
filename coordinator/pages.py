@@ -508,6 +508,7 @@ KIND_LOOK = {  # kind -> (css class, icon, word); every status has an icon and a
     "handover": ("k-hand", "handover", "Handover"),
     "finished": ("k-fin", "circle-check", "Finished"),
     "closed": ("k-clo", "k-closed", "Closed"),
+    "parked": ("k-wait", "inbox", "Parked"),
     "unknown": ("k-clo", "config-error", "Unknown kind"),
 }
 FINAL = ("finished", "closed")
@@ -651,7 +652,7 @@ def page_project(d, older: bool = False) -> Raw:
     now = _now()
     p = d["project"]
     here = f"/p/{p['key']}" + ("/all" if older else "")
-    if d["inbox"] or any(c["cards"] for c in d["columns"]):
+    if d["inbox"] or d["backlog"] or any(c["cards"] for c in d["columns"]):
         columns = Raw("".join(_column(c, d, here, older, now) for c in d["columns"]))
     else:
         columns = render("_empty_board.html", icon=icon("folder", "lg"),
@@ -664,13 +665,20 @@ def page_project(d, older: bool = False) -> Raw:
             for c in d["inbox"]])
         inbox = render("_inbox.html", count=len(d["inbox"]), items=items,
                        icon_inbox=icon("inbox"), icon_chevron=icon("chevron-down"))
+    backlog = ""
+    if d["backlog"]:
+        items = render_all("_backlog_item.html", [
+            {"id": c["id"], "title": c["title"], "origin": _from(c, now)}
+            for c in d["backlog"]])
+        backlog = render("_backlog.html", count=len(d["backlog"]), items=items,
+                         icon_inbox=icon("inbox"), icon_chevron=icon("chevron-down"))
     notice = (render("_note.html", tone="amb page-note", icon=icon("config-error", ""),
                      strong="The project file could not be read.",
                      text=p["config_error"]) if p["config_error"] else "")
     name = p["name"] or p["key"]
     return _page("project.html", f"{name} board", d["token"], name=name,
                  monogram=monogram(name), tint=_tint(p["key"]), here=here,
-                 icon_plus=icon("plus", ""), notice=notice, inbox=inbox,
+                 icon_plus=icon("plus", ""), notice=notice, inbox=inbox, backlog=backlog,
                  columns=columns, dialog=_new_task_dialog(d), **_head(now))
 
 

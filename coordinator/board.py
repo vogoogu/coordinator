@@ -475,7 +475,13 @@ def api_project(conn, key: str) -> dict:
     known = {n for n, _, _ in states}
     columns = [{"name": n, "label": label, "kind": kind, "cards": [
         cards[t["id"]] for t in tasks if t["state"] == n and not t["inbox"]]}
-        for n, label, kind in states]
+        for n, label, kind in states if kind != "parked"]   # parked tasks go to the backlog fold
+    parked = {n for n, _, kind in states if kind == "parked"}
+    notes = sorted((t for t in tasks if t["state"] in parked),
+                   key=lambda t: (t["created"], t["number"]), reverse=True)
+    backlog = [{**cards[t["id"]], "created": t["created"],
+                "created_by_type": t["created_by_type"], "created_by_id": t["created_by_id"]}
+               for t in notes]
     unknown = [cards[t["id"]] for t in tasks
                if t["state"] not in known and not t["inbox"]]
     if unknown:
@@ -491,7 +497,7 @@ def api_project(conn, key: str) -> dict:
                          for p in core.list_projects(conn)],
             "modes": cfg.modes if cfg else [],
             "default_mode": cfg.default_mode if cfg else "",
-            "inbox": inbox, "columns": columns}
+            "inbox": inbox, "backlog": backlog, "columns": columns}
 
 
 def api_pulse(conn) -> dict:
